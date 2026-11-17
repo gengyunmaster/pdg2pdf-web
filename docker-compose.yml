@@ -1,0 +1,17 @@
+services:
+  pdg2pdf:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - pdg2pdf-data:/srv/data
+      # Optional: archive password list (never commit this file)
+      # - ./vendor/passwords.txt:/srv/vendor/passwords.txt:ro
+    environment:
+      PDG2PDF_CONVERTER: wine_pdg2pic
+      PDG2PIC_EXE: /srv/vendor/Pdg2Pic.exe
+      # PDG2PDF_PASSWORD_LIST: /srv/vendor/passwords.txt
+    restart: unless-stopped
+
+volumes:
+  pdg2pdf-data:

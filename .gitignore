@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Runtime data (uploads, jobs, results, wine prefixes)
+data/
+.wine/
+
+# BYOB vendor area: deployer-provided Pdg2Pic.exe must never be committed.
+vendor/*.exe
+vendor/*.zip
+!vendor/.gitkeep
+
+# Secrets & private material must never enter this repository.
+passwords*.txt
+*.env
+.env
+
+# Misc
+*.log
+.DS_Store
