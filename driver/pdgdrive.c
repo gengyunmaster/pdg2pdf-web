@@ -517,7 +517,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     fprintf(stderr, "pdgdrive: tree pick=%d ok_enabled=%d\n",
             picked, ok0 ? IsWindowEnabled(ok0) : -1);
     if (picked == 2) {
-        WCHAR zb[] = {L'Z', L':', L'\', 0};
+        WCHAR zb[] = {L'Z', L':', L'\\', 0};
         SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)zb);
         Sleep(2500);
         fprintf(stderr, "pdgdrive: BFFM(Z:\\) ok_enabled=%d\n",
