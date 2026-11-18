@@ -32,7 +32,7 @@ RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY driver ./driver
 COPY wordlists ./wordlists
-RUN make -C driver \
+RUN echo "rebuilding drivers" && make -C driver \
  && rm -rf driver/*.o
 
 # Initialize a Wine prefix at build time so first boot is fast.
