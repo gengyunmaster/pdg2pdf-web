@@ -278,29 +278,21 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (!browse) { fprintf(stderr, "pdgdrive: browse button missing\n"); kill_app(); return 3; }
     PostMessageW(browse, BM_CLICK, 0, 0);
 
-    /* wait for the picker (a #32770 owned by the app, not the main window) */
-    HWND picker = NULL;
-    for (int i = 0; i < 40 && !picker; i++) {
+    /* wait for the picker: a #32770 owned by the app, not the main window,
+     * actually containing the folder-name edit (control 3745) */
+    HWND picker = NULL, ped = NULL;
+    for (int i = 0; i < 80 && !ped; i++) {
         Sleep(500);
         for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h;
              h = FindWindowExW(NULL, h, L"#32770", NULL)) {
             DWORD p = 0; GetWindowThreadProcessId(h, &p);
-            if (p == g_app_pid && h != g_main) { picker = h; break; }
+            if (p != g_app_pid || h == g_main) continue;
+            HWND e = find_ctrl(h, PICKER_EDIT_ID);
+            if (e) { picker = h; ped = e; break; }
         }
     }
     if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
-
-    HWND ped = NULL;
-    for (int i = 0; i < 20 && !ped; i++) {
-        ped = find_ctrl(picker, PICKER_EDIT_ID);
-        if (!ped) Sleep(500);
-    }
-    if (!ped) {
-        fprintf(stderr, "pdgdrive: picker edit not found; children:\n");
-        EnumChildWindows(picker, dbg_dump, 0);
-        kill_app(); return 3;
-    }
     SetWindowTextW(ped, src);
     Sleep(300);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
