@@ -125,12 +125,37 @@ static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
     (void)lp;
     GetClassNameW(hwnd, cls, 63);
     GetWindowTextW(hwnd, title, 255);
-    if (wcscmp(cls, L"#32770") == 0 && wcscmp(title, L"Pdg2Pic") == 0) {
+    if (wcscmp(cls, L"#32770") == 0 && wcscmp(title, L"Pdg2Pic") == 0 &&
+        FindWindowExW(hwnd, NULL, L"SysListView32", NULL)) {
         g_main = hwnd;
         GetWindowThreadProcessId(hwnd, &g_app_pid);
         return FALSE;
     }
     return TRUE;
+}
+
+/* Post a synthetic WM_DROPFILES carrying one directory path. Drag-and-drop
+ * is a documented input path of the app, so this replaces the fragile
+ * edit-control notification chain. */
+static int drop_folder(HWND target, const WCHAR *dir) {
+    size_t len = wcslen(dir) + 1;              /* one path + second NUL */
+    size_t bytes = sizeof(DROPFILES) + (len + 1) * sizeof(WCHAR);
+    HGLOBAL h = GlobalAlloc(GHND | GMEM_SHARE, bytes);
+    if (!h) return 0;
+    DROPFILES *df = (DROPFILES *)GlobalLock(h);
+    if (!df) { GlobalFree(h); return 0; }
+    df->pFiles = sizeof(DROPFILES);
+    df->pt.x = df->pt.y = 0;
+    df->fNC = FALSE;
+    df->fWide = TRUE;
+    memcpy((char *)df + sizeof(DROPFILES), dir, len * sizeof(WCHAR));
+    ((WCHAR *)((char *)df + sizeof(DROPFILES)))[len] = 0;
+    GlobalUnlock(h);
+    if (!PostMessageW(target, WM_DROPFILES, (WPARAM)h, 0)) {
+        GlobalFree(h);
+        return 0;
+    }
+    return 1;
 }
 
 static int find_pdf(const WCHAR *watch, WCHAR *out, size_t cap) {
@@ -247,18 +272,26 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* 2. set the source folder; EN_CHANGE fires the app's scan handler */
-    if (!SetDlgItemTextW(g_main, SRC_EDIT_ID, src)) {
-        fprintf(stderr, "pdgdrive: SetDlgItemText(1066) failed %lu\n",
-                GetLastError());
+    /* 2. feed the source folder via a synthetic drag-and-drop */
+    SetDlgItemTextW(g_main, SRC_EDIT_ID, src); /* cosmetic mirror */
+    HWND list = GetDlgItem(g_main, FILE_LIST_ID);
+    if (!drop_folder(g_main, src)) {
+        fprintf(stderr, "pdgdrive: WM_DROPFILES failed\n");
         kill_app(); return 3;
     }
-    Sleep(1500); /* allow the scan to populate the list */
 
-    /* 3. confirm the list got items (LVM_GETITEMCOUNT) */
-    HWND list = GetDlgItem(g_main, FILE_LIST_ID);
-    int items = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
+    /* 3. wait for the scan to populate the file list */
+    int items = 0;
+    for (int i = 0; i < 40; i++) {
+        items = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
+        if (items > 0) break;
+        Sleep(500);
+    }
     fprintf(stderr, "pdgdrive: file list items=%d\n", items);
+    if (items == 0) {
+        fprintf(stderr, "pdgdrive: folder scan produced no items\n");
+        kill_app(); return 4;
+    }
 
     /* 4. start conversion (ID 1 = the on-screen "4" step button) */
     HWND btn = GetDlgItem(g_main, START_BTN_ID);
