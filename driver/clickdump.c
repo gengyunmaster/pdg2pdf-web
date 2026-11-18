@@ -14,10 +14,13 @@ static void dump_one(HWND hwnd) {
     GetWindowTextW(hwnd, title, 1023);
     GetWindowThreadProcessId(hwnd, &pid);
     RECT rc; GetWindowRect(hwnd, &rc);
-    printf("hwnd=%08lx id=%04x vis=%d area=%ld cls=%-24s title=%ls pid=%lu\n",
+    POINT pt = { rc.left, rc.top };
+    HWND top = GetAncestor(hwnd, GA_ROOT);
+    if (top && top != hwnd) ScreenToClient(top, &pt);
+    printf("hwnd=%08lx id=%04x vis=%d xy=%d,%d wh=%dx%d cls=%-20s title=%ls pid=%lu\n",
            (unsigned long)hwnd, (unsigned)GetDlgCtrlID(hwnd),
            IsWindowVisible(hwnd) ? 1 : 0,
-           (long)((rc.right - rc.left) * (rc.bottom - rc.top)),
+           pt.x, pt.y, rc.right - rc.left, rc.bottom - rc.top,
            cls, title, pid);
 }
 
