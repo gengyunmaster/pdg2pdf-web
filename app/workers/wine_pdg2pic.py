@@ -1,25 +1,43 @@
 """Phase A backend: drive Pdg2Pic.exe under Wine/Xvfb via the Win32 driver.
 
-The driver program (driver/pgdrive.exe, cross-compiled from driver/pgdrive.c)
-finds the Pdg2Pic main window and drives it with Win32 messages only
-(WM_SETTEXT / WM_DROPFILES / BM_CLICK) — no coordinate-based automation.
-This module is completed in Phase A; see driver/README.md for the design.
+Flow per conversion job:
+  1. Copy the deployer-provided Pdg2Pic.exe into a writable per-job staging
+     dir (the app writes Pdg2Pic.ini / logs next to its own executable).
+  2. Locate the directory that actually holds the PDG files (archives often
+     nest a top-level folder).
+  3. Run driver/pgdrive.exe under Wine: it sets the source-folder edit
+     control, clicks the start button, watches for the output PDF and
+     dismisses completion/error popups.
+  4. Collect the produced PDF. The app's default "target = source folder"
+     setting means the PDF appears next to the PDG files.
 """
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
 from pathlib import Path
 
-from ..archives import Extraction
+from ..archives import Extraction, find_pdg_files
 from ..config import PDG2PIC_EXE
 
+DRIVER = Path(__file__).resolve().parents[2] / "driver" / "pdgdrive.exe"
+TIMEOUT = int(os.environ.get("PDG2PDF_CONVERT_TIMEOUT", "1800"))
 
-def write_pdg2pic_ini(path: Path, source_dir: Path, options: dict) -> None:
-    """Write Pdg2Pic.ini next to the executable.
 
-    TODO(Phase A): the exact key names must be confirmed empirically by
-    diffing an ini produced by the real application after changing settings.
-    """
-    raise NotImplementedError("ini key layout pending empirical confirmation")
+def _book_root(extracted: Extraction) -> Path:
+    """Directory that directly contains the PDG files."""
+    pdgs = find_pdg_files(extracted.extract_dir)
+    if not pdgs:
+        raise RuntimeError("no PDG files found in the archive")
+    parents = {p.parent for p in pdgs}
+    if len(parents) == 1:
+        return parents.pop()
+    # nested layouts: pick the directory holding the majority of pages
+    counts: dict[Path, int] = {}
+    for p in pdgs:
+        counts[p.parent] = counts.get(p.parent, 0) + 1
+    return max(counts, key=counts.get)
 
 
 class WinePdg2PicConverter:
@@ -28,12 +46,58 @@ class WinePdg2PicConverter:
     async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
         if not PDG2PIC_EXE.exists():
             raise RuntimeError(
-                f"Pdg2Pic.exe not found at {PDG2PIC_EXE}. "
-                "Obtain it from the author's distribution page (see README) "
-                "or set PDG2PIC_EXE."
+                f"Pdg2Pic.exe not found at {PDG2PIC_EXE}. Obtain it from the "
+                "author's distribution page (see README) or set PDG2PIC_EXE."
             )
-        raise NotImplementedError(
-            "Wine backend wiring is implemented in Phase A "
-            "(driver/pgdrive.c + Xvfb orchestration). "
-            "Use PDG2PDF_CONVERTER=echo for now."
+        if not DRIVER.exists():
+            raise RuntimeError(f"driver not built: {DRIVER} (run 'make -C driver')")
+
+        src = _book_root(extracted)
+        stage = out_dir.parent / "wine"
+        stage.mkdir(parents=True, exist_ok=True)
+        exe = stage / "Pdg2Pic.exe"
+        shutil.copyfile(PDG2PIC_EXE, exe)
+
+        env = dict(os.environ)
+        env.setdefault("WINEDEBUG", "-1")
+        cmd = ["wine", str(DRIVER), "--src", str(src), "--watch", str(src),
+               "--timeout", str(TIMEOUT)]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=stage,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            env=env,
         )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), TIMEOUT + 120)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("conversion timed out")
+        finally:
+            subprocess_wineserver_kill(env)
+
+        text = out.decode("utf-16-le", "replace") if out else ""
+        pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
+        if proc.returncode != 0 or not pdf_line:
+            tail = "\n".join(text.splitlines()[-10:])
+            raise RuntimeError(
+                f"pdgdrive failed (rc={proc.returncode}): {tail}"
+            )
+        pdf = Path(pdf_line[4:])
+        if not pdf.exists():
+            raise RuntimeError(f"pdgdrive reported missing file: {pdf}")
+        result = out_dir / "result.pdf"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(pdf, result)
+        return result
+
+
+def subprocess_wineserver_kill(env: dict) -> None:
+    """Best-effort cleanup so a crashed app cannot poison the next job."""
+    try:
+        import subprocess
+
+        subprocess.run(["wineserver", "-k"], env=env, timeout=15,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
