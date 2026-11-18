@@ -54,19 +54,65 @@ def _jpeg_normalize(raw: bytes) -> bytes:
     return bytes(out)
 
 
+def _mask_padding(px: bytes, w: int, h: int) -> bytes:
+    stride = (w + 7) // 8
+    out = bytearray(px)
+    pad = stride * 8 - w
+    if pad:
+        keep = (0xFF << pad) & 0xFF
+        for y in range(h):
+            out[y * stride + stride - 1] &= keep
+    return bytes(out)
+
+
+def _decode_ccitt(im):
+    from engine.ccitt import decode_g4  # noqa: PLC0415
+    w = im.params.get("Columns") or im.width
+    h = im.params.get("Rows") or im.height
+    try:
+        return decode_g4(im.raw, int(w), int(h))
+    except Exception:
+        return None
+
+
+def _same_image(a, b) -> bool:
+    if a.raw == b.raw or a.raw == _jpeg_normalize(b.raw):
+        return True
+    if "CCITT" in a.filter and "CCITT" in b.filter:
+        da, db = _decode_ccitt(a), _decode_ccitt(b)
+        if da is not None and db is not None:
+            w = int(a.params.get("Columns") or a.width)
+            h = int(a.params.get("Rows") or a.height)
+            return da == _mask_padding(db, w, h)
+    return False
+
+
 def compare(engine_pdf: bytes, oracle_pdf: bytes) -> dict:
     eb, ob = page_boxes(engine_pdf), page_boxes(oracle_pdf)
     eng_imgs = extract_images(engine_pdf)
     orc_imgs = extract_images(oracle_pdf)
-    idx: dict[tuple, list[bytes]] = {}
+    idx: dict[tuple, list] = {}
     for im in orc_imgs:
-        key = (im.width, im.height)
-        idx.setdefault(key, []).append(im.raw)
-        idx.setdefault(key, []).append(_jpeg_normalize(im.raw))
-    identical = sum(
-        1 for im in eng_imgs
-        if any(c == im.raw or c == _jpeg_normalize(im.raw)
-               for c in idx.get((im.width, im.height), [])))
+        idx.setdefault((im.width, im.height), []).append(im)
+    identical = 0
+    pixel_probes = 0
+    for im in eng_imgs:
+        cands = idx.get((im.width, im.height), [])
+        hit = any(im.raw == c.raw or im.raw == _jpeg_normalize(c.raw)
+                  for c in cands)
+        if not hit and "CCITT" in im.filter and pixel_probes < 5:
+            # byte-compare failed: verify a few pages pixel-by-pixel
+            for c in cands:
+                if "CCITT" in c.filter:
+                    da, db = _decode_ccitt(im), _decode_ccitt(c)
+                    if da is not None and db is not None:
+                        w = int(im.params.get("Columns") or im.width)
+                        h = int(im.params.get("Rows") or im.height)
+                        hit = da == _mask_padding(db, w, h)
+                        pixel_probes += 1
+                        break
+        if hit:
+            identical += 1
     return {
         "engine_pages": len(eb), "oracle_pages": len(ob),
         "pages_match": len(eb) == len(ob),
@@ -74,6 +120,7 @@ def compare(engine_pdf: bytes, oracle_pdf: bytes) -> dict:
         "streams_engine": len(eng_imgs), "streams_oracle": len(orc_imgs),
         "streams_identical": identical,
     }
+
 
 
 def main(argv: list[str]) -> int:
