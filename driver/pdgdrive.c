@@ -23,11 +23,14 @@
 #define SRC_EDIT_ID   1066   /* 0x42a  source folder edit                */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                     */
 #define START_BTN_ID  1      /* IDOK, the on-screen "4 开始转换" button  */
+#define SRC_BROWSE_ID   1004 /* 0x3ec  opens the folder picker             */
+#define PICKER_OK_ID    1    /* picker's 确定 button                      */
 
 static DWORD g_app_pid = 0;
 static HWND  g_main = NULL;
 static PROCESS_INFORMATION g_pi = {0};
 static WCHAR g_watch_dir[MAX_PATH] = {0};
+static HANDLE g_app_proc = NULL;
 
 /* Chinese popup keywords as \uXXXX escapes (encoding-agnostic source). */
 static const WCHAR TXT_OK_DONE[] =
@@ -363,6 +366,169 @@ static void unix_to_win(const WCHAR *in, WCHAR *out, size_t cap) {
     out[o] = 0;
 }
 
+struct find_ctx2 { UINT id; HWND found; };
+
+static BOOL CALLBACK find_edit(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    WCHAR cls[64] = {0};
+    GetClassNameW(hwnd, cls, 63);
+    if (!wcscmp(cls, L"Edit")) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+static HWND find_first_edit(HWND root) {
+    struct find_ctx2 c = { 0, NULL };
+    EnumChildWindows(root, find_edit, (LPARAM)&c);
+    return c.found;
+}
+
+
+static BOOL CALLBACK find_by_class_tree(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    WCHAR cls[64] = {0};
+    GetClassNameW(hwnd, cls, 63);
+    if (!wcscmp(cls, L"SysTreeView32")) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+
+static BOOL CALLBACK find_by_id(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    if ((UINT)GetDlgCtrlID(hwnd) == c->id) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+static HWND find_ctrl(HWND root, UINT id) {
+    struct find_ctx2 c = { id, NULL };
+    EnumChildWindows(root, find_by_id, (LPARAM)&c);
+    return c.found;
+}
+
+
+/* ---- cross-process tree-view access ------------------------------- */
+static int ci_eq(const WCHAR *a, const WCHAR *b) {
+    while (*a && *b) {
+        WCHAR x = *a, y = *b;
+        if (x >= L'A' && x <= L'Z') x += 32;
+        if (y >= L'A' && y <= L'Z') y += 32;
+        if (x != y) return 0;
+        a++; b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+static int remote_item_text(HWND tree, HTREEITEM item, WCHAR *out, size_t cap) {
+    SIZE_T need = sizeof(TVITEMW) + cap * sizeof(WCHAR);
+    LPVOID base = VirtualAllocEx(g_app_proc, NULL, need, MEM_COMMIT, PAGE_READWRITE);
+    if (!base) return 0;
+    TVITEMW ti;
+    ZeroMemory(&ti, sizeof(ti));
+    ti.mask = TVIF_TEXT | TVIF_HANDLE;
+    ti.hItem = item;
+    ti.pszText = (LPWSTR)((char *)base + sizeof(TVITEMW));
+    ti.cchTextMax = (int)cap - 1;
+    SIZE_T wr = 0;
+    if (!WriteProcessMemory(g_app_proc, base, &ti, sizeof(ti), &wr) ||
+        wr < sizeof(ti)) { VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE); return 0; }
+    LRESULT ok = SendMessageW(tree, TVM_GETITEMW, 0, (LPARAM)base);
+    if (!ok) { VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE); return 0; }
+    ZeroMemory(out, cap * sizeof(WCHAR));
+    SIZE_T rd = 0;
+    ReadProcessMemory(g_app_proc, ti.pszText, out, (cap - 1) * sizeof(WCHAR), &rd);
+    VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE);
+    out[cap - 1] = 0;
+    return 1;
+}
+
+static HTREEITEM find_child_by_text(HWND tree, HTREEITEM parent,
+                                    const WCHAR *name) {
+    HTREEITEM it = (HTREEITEM)SendMessageW(
+        tree, TVM_GETNEXTITEM, parent ? TVGN_CHILD : TVGN_ROOT, (LPARAM)parent);
+    while (it) {
+        WCHAR t[256] = {0};
+        if (remote_item_text(tree, it, t, 256) && ci_eq(t, name)) return it;
+        it = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)it);
+    }
+    return NULL;
+}
+
+/* Walk the picker tree to winpath (e.g. Z:\tmp\w), expanding and
+ * selecting each component. Returns 1 when the leaf got the caret. */
+static int pick_path_in_tree(HWND tree, const WCHAR *winpath) {
+    if (!tree || !g_app_proc) return 0;
+    WCHAR buf[MAX_PATH] = {0};
+    wcsncpy(buf, winpath, MAX_PATH - 1);
+    /* split into components on backslash */
+    WCHAR *comps[32]; int nc = 0;
+    WCHAR *p = buf;
+    while (*p && nc < 32) {
+        while (*p == L'\\') p++;
+        if (!*p) break;
+        comps[nc++] = p;
+        while (*p && *p != L'\\') p++;
+        if (*p) *p++ = 0;
+    }
+    HTREEITEM cur = NULL;
+    for (int i = 0; i < nc; i++) {
+        const WCHAR *comp = comps[i];
+        HTREEITEM next = find_child_by_text(tree, cur, comp);
+        if (!next && i == 0 && comp[1] == L':') {
+            /* namespace: Desktop -> My Computer -> drives */
+            static const WCHAR MC_ZH[] = {0x6211,0x7684,0x7535,0x8111,0}; /* 我的电脑 */
+            HTREEITEM desk = cur ? cur
+                : (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+            if (desk) {
+                SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)desk);
+                Sleep(400);
+                HTREEITEM mc = find_child_by_text(tree, desk, L"My Computer");
+                if (!mc) mc = find_child_by_text(tree, desk, MC_ZH);
+                if (mc) {
+                    SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)mc);
+                    Sleep(400);
+                    cur = mc;
+                    next = find_child_by_text(tree, cur, comp);
+                }
+            }
+        }
+        if (!next && cur && i == 1) {
+            WCHAR t0[64] = {0};
+            if (remote_item_text(tree, cur, t0, 64) && ci_eq(t0, L"Z:")) {
+                fprintf(stderr, "pdgdrive: bypassing folder-not-loaded case\n");
+                return 2;
+            }
+        }
+        if (!next) {
+            fprintf(stderr, "pdgdrive: tree component not found: ");
+            /* comp is WCHAR*; log via utf8 */
+            int n8 = WideCharToMultiByte(CP_UTF8, 0, comp, -1, NULL, 0, NULL, NULL);
+            char *b8 = (char *)malloc((size_t)n8 + 1);
+            WideCharToMultiByte(CP_UTF8, 0, comp, -1, b8, n8, NULL, NULL);
+            fprintf(stderr, "%s\n", b8);
+            free(b8);
+            return 0;
+        }
+        if (cur) SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)cur);
+        Sleep(200);
+        SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)next);
+        Sleep(200);
+        cur = next;
+    }
+    return 1;
+}
+
+
+/* Desktop-rooted pick: the deployer plants a symlink on the Wine desktop
+ * (see worker); we only need to expand the root and select that child. */
+static int pick_named_child(HWND tree, const WCHAR *child) {
+    HTREEITEM desk = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+    if (!desk) return 0;
+    SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)desk);
+    Sleep(1500);
+    HTREEITEM it = find_child_by_text(tree, desk, child);
+    if (!it) return 0;
+    SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)it);
+    Sleep(300);
+    return 1;
+}
+
+
 /* Pre-seed Pdg2Pic.ini next to the executable. UTF-16LE with BOM,
  * [ParaBlock] section, exactly like the app writes it. */
 static int write_ini(const WCHAR *ini_path, const WCHAR *src_win,
@@ -422,6 +588,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)cmdline; (void)show;
     WCHAR *cl = GetCommandLineW();
     WCHAR src[MAX_PATH] = {0}, pdf[MAX_PATH] = {0}, app[MAX_PATH] = {0};
+    WCHAR desk_name[MAX_PATH] = {0};
     int timeout_sec = 1800;
 
     {
@@ -435,6 +602,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 wcsncpy(pdf, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--app") && i + 1 < argc)
                 wcsncpy(app, argv[++i], MAX_PATH - 1);
+            else if (!wcscmp(argv[i], L"--name") && i + 1 < argc)
+                wcsncpy(desk_name, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--timeout") && i + 1 < argc)
                 timeout_sec = _wtoi(argv[++i]);
         }
@@ -519,36 +688,65 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* feed the source folder through a real OLE drag-and-drop */
+    /* feed the source folder through the app's folder picker:
+     * click the browse button, walk the picker tree to our desktop
+     * folder (--name), and confirm with OK. */
     Sleep(1500);
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
-    int dropped = 0;
     {
-        /* drop positions: list center, then main window center */
-        POINT pts[2]; int np = 0;
-        RECT rc; 
-        if (list && GetWindowRect(list, &rc)) {
-            pts[np].x = (rc.left + rc.right) / 2;
-            pts[np].y = (rc.top + rc.bottom) / 2; np++;
-        }
-        if (GetWindowRect(g_main, &rc)) {
-            pts[np].x = (rc.left + rc.right) / 2;
-            pts[np].y = (rc.top + rc.bottom) / 2; np++;
-        }
-        for (int i = 0; i < np && !dropped; i++) {
-            if (ole_drop_at(src_win, pts[i].x, pts[i].y)) {
-                fprintf(stderr, "pdgdrive: ole drop at %d,%d ok\n",
-                        pts[i].x, pts[i].y);
-                dropped = 1;
+        HWND browse = GetDlgItem(g_main, SRC_BROWSE_ID);
+        if (!browse) { fprintf(stderr, "pdgdrive: browse button missing\n"); kill_app(); return 3; }
+        SendMessageTimeoutW(browse, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
+
+        HWND picker = NULL, ped = NULL;
+        for (int i = 0; i < 80 && !ped; i++) {
+            Sleep(500);
+            for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h;
+                 h = FindWindowExW(NULL, h, L"#32770", NULL)) {
+                DWORD p = 0; GetWindowThreadProcessId(h, &p);
+                if (p != g_app_pid || h == g_main) continue;
+                if (!IsWindowVisible(h)) continue;
+                WCHAR t[128] = {0};
+                GetWindowTextW(h, t, 127);
+                if (wcsstr(t, L"Pdg2Pic")) continue;
+                struct find_ctx2 tc = { 0, NULL };
+                EnumChildWindows(h, find_by_class_tree, (LPARAM)&tc);
+                if (!tc.found) continue;
+                HWND e = find_first_edit(h);
+                if (!e) continue;
+                picker = h; ped = e;
+                break;
             }
         }
+        if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
+        fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
+
+        struct find_ctx2 tc = { 0, NULL };
+        EnumChildWindows(picker, find_by_class_tree, (LPARAM)&tc);
+        HWND tree = tc.found;
+        HWND okbtn = find_ctrl(picker, PICKER_OK_ID);
+        g_app_proc = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ |
+                                     PROCESS_VM_WRITE, FALSE, g_app_pid);
+        if (!g_app_proc) { fprintf(stderr, "pdgdrive: OpenProcess failed\n"); kill_app(); return 3; }
+        int picked = 0;
+        if (desk_name[0] && tree)
+            picked = pick_named_child(tree, desk_name);
+        else if (tree)
+            picked = pick_path_in_tree(tree, src_win);
+        fprintf(stderr, "pdgdrive: tree pick=%d ok enabled=%d\n",
+                picked, okbtn ? IsWindowEnabled(okbtn) : -1);
+        for (int i = 0; i < 30 && okbtn && !IsWindowEnabled(okbtn); i++) Sleep(300);
+        if (!okbtn) okbtn = find_ctrl(picker, PICKER_OK_ID);
+        if (!okbtn) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
+        SendMessageW(picker, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)okbtn);
+        Sleep(1500);
     }
-    if (!dropped) { fprintf(stderr, "pdgdrive: ole drop failed\n"); kill_app(); return 3; }
-    Sleep(2000);
     {
-        WCHAR cur[512] = {0};
-        GetDlgItemTextW(g_main, SRC_EDIT_ID, cur, 511);
-        fprintf(stderr, "pdgdrive: source edit: "); utf8_print(stderr, cur);
+        WCHAR a[512] = {0}, b[512] = {0};
+        GetDlgItemTextW(g_main, 1066, a, 511);
+        GetDlgItemTextW(g_main, 1064, b, 511);
+        fprintf(stderr, "pdgdrive: edit1066: "); utf8_print(stderr, a);
+        fprintf(stderr, "pdgdrive: edit1064: "); utf8_print(stderr, b);
         fprintf(stderr, "pdgdrive: list items=%ld\n",
                 list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1);
     }
