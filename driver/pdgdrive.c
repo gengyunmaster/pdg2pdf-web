@@ -132,6 +132,19 @@ static BOOL CALLBACK dbg_dump(HWND hwnd, LPARAM lp) {
     return TRUE;
 }
 
+
+struct find_ctx2 { UINT id; HWND found; };
+static BOOL CALLBACK find_by_id(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    if ((UINT)GetDlgCtrlID(hwnd) == c->id) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+static HWND find_ctrl(HWND root, UINT id) {
+    struct find_ctx2 c = { id, NULL };
+    EnumChildWindows(root, find_by_id, (LPARAM)&c);
+    return c.found;
+}
+
 static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
     WCHAR cls[64] = {0}, title[256] = {0};
     (void)lp;
@@ -278,14 +291,13 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
 
-    if (!SetDlgItemTextW(picker, PICKER_EDIT_ID, src)) {
-        fprintf(stderr, "pdgdrive: picker edit not found\n");
-        kill_app(); return 3;
-    }
+    HWND ped = find_ctrl(picker, PICKER_EDIT_ID);
+    if (!ped) { fprintf(stderr, "pdgdrive: picker edit not found\n"); kill_app(); return 3; }
+    SetWindowTextW(ped, src);
     Sleep(300);
-    HWND ok = GetDlgItem(picker, PICKER_OK_ID);
+    HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
-    SendMessageW(ok, BM_CLICK, 0, 0);
+    PostMessageW(ok, BM_CLICK, 0, 0);
 
     /* 3. wait for the scan to populate the file list */
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
