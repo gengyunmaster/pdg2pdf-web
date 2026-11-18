@@ -112,15 +112,7 @@ class WinePdg2PicConverter:
             raise RuntimeError(
                 f"pdgdrive failed (rc={proc.returncode}): {tail_txt}"
             )
-        pdf = wine_path_to_unix(pdf_line[4:])
-        if not pdf.exists():
-            import subprocess as _sp
-            found = _sp.run(["find", "/", "-name", "*.pdf", "-not", "-path",
-                             "/proc/*", "-not", "-path", "/sys/*"],
-                            capture_output=True, text=True, timeout=30).stdout
-            raise RuntimeError(
-                f"pdgdrive reported missing file: {pdf}; "
-                f"actual PDFs on disk: {found.strip()[:400] or 'none'}")
+        pdf = _locate_pdf(wine_path_to_unix(pdf_line[4:]), staged)
         result = out_dir / "result.pdf"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(pdf, result)
@@ -130,6 +122,31 @@ class WinePdg2PicConverter:
         except OSError:
             pass
         return result
+
+
+
+
+def _locate_pdf(reported: Path, staged: Path) -> Path:
+    """Return the newest PDF among the reported path and the known output
+    locations (the driver reports wine paths; the app writes next to the
+    source folder or into the unix home)."""
+    import time
+
+    cands = [reported, Path.home() / reported.name, staged / reported.name]
+    best, best_mt = None, -1.0
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        for c in cands:
+            try:
+                mt = c.stat().st_mtime
+            except OSError:
+                continue
+            if mt > best_mt:
+                best, best_mt = c, mt
+        if best is not None:
+            return best
+        time.sleep(0.5)
+    raise RuntimeError(f"pdgdrive reported {reported} but no PDF appeared")
 
 
 def env_wineprefix() -> str:
