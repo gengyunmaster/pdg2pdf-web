@@ -134,6 +134,29 @@ static BOOL CALLBACK dbg_dump(HWND hwnd, LPARAM lp) {
 
 
 struct find_ctx2 { UINT id; HWND found; };
+
+static BOOL CALLBACK find_edit(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    WCHAR cls[64] = {0};
+    GetClassNameW(hwnd, cls, 63);
+    if (!wcscmp(cls, L"Edit")) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+static HWND find_first_edit(HWND root) {
+    struct find_ctx2 c = { 0, NULL };
+    EnumChildWindows(root, find_edit, (LPARAM)&c);
+    return c.found;
+}
+
+
+static BOOL CALLBACK find_by_class_tree(HWND hwnd, LPARAM lp) {
+    struct find_ctx2 *c = (struct find_ctx2 *)lp;
+    WCHAR cls[64] = {0};
+    GetClassNameW(hwnd, cls, 63);
+    if (!wcscmp(cls, L"SysTreeView32")) { c->found = hwnd; return FALSE; }
+    return TRUE;
+}
+
 static BOOL CALLBACK find_by_id(HWND hwnd, LPARAM lp) {
     struct find_ctx2 *c = (struct find_ctx2 *)lp;
     if ((UINT)GetDlgCtrlID(hwnd) == c->id) { c->found = hwnd; return FALSE; }
@@ -291,10 +314,18 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             if (!IsWindowVisible(h)) continue;   /* skip childless shadows */
             WCHAR t[128] = {0};
             GetWindowTextW(h, t, 127);
-            if (!wcsstr(t, L"Pdg2Pic")) {
-                HWND e = find_ctrl(h, PICKER_EDIT_ID);
-                if (e) { picker = h; ped = e; break; }
-            }
+            if (wcsstr(t, L"Pdg2Pic")) continue; /* not the picker */
+            /* a folder picker has a tree; a save dialog does not */
+            if (!find_ctrl(h, 0 /*never*/)) { }
+            struct find_ctx2 tc = { 0, NULL };
+            EnumChildWindows(h, find_by_class_tree, (LPARAM)&tc);
+            if (!tc.found) continue;
+            HWND e = find_first_edit(h);
+            if (!e) continue;
+            picker = h; ped = e;
+            fprintf(stderr, "pdgdrive: candidate dialog %lx title=", (unsigned long)h);
+            utf8_print(stderr, t);
+            break;
         }
     }
     if (!picker) {
