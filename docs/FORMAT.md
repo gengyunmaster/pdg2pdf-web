@@ -109,10 +109,26 @@ A minority of pages (~6% of our corpus) live in a container with magic
   ``FF D8 FF`` / ``FF D9`` pairs;
 - the bitonal base layer payload is NOT stored verbatim: it is
   transformed (high entropy; not XOR/reversal/bit-reversal, not
-  zlib/gzip/bz2/lzma). Decryption requires reverse engineering of the
-  reference decoder (10 code sites compare against ``0x4848``; the
-  dispatch cluster sits around file offset 0x5c6667). Until then, books
-  containing such pages are converted by the optional Wine backend.
+  zlib/gzip/bz2/lzma). Until it is cracked, such books go through the
+  optional Wine backend.
+
+### Static-analysis progress (Pdg2Pic.exe)
+
+The format-detect dispatch lives around 0x5c6600-0x5c6700. The sniffer
+at 0x5c6738 cascades over payload magics: JPEG (``FF D8``), PNG
+(``89 50 4E 47``), ``GIF8``, ``BM``, TIFF (``II``/``MM``), WEBP at
+offset 8, DjVu (``AT&T``); GIF dimensions are the little-endian u16 pair
+at offsets 6/8 (codec tag 0x60), WEBP's branch (0x5c6c7d) calls
+0x5f99b4 with tag 0xC00, TIFF (0x5c6cd2) calls 0x5dd1cc. The encrypted
+V2 branch runs through 0x5c7bb0 / 0x5c7b44 — the transform itself is one
+call level deeper and remains unrecovered. Bookmarks (default, no
+bookcontents.dat): the reference emits a flat outline — section firsts
+(封面/书名页/版权/前言/目录) in the order cov,bok,leg,fow,! — one entry
+per body page titled by printed page number, and 封底 (bac page, or the
+last page when bac is absent; cov002 then acts as the back cover and is
+moved to the end). BookInfo.dat is appended as a GBK text page set in
+STSong-Light (GBK-EUC-H, Tm-per-line, first baseline height-79.2, 14 pt
+leading).
 
 ## 7. Out of scope
 
