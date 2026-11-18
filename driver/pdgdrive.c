@@ -22,6 +22,7 @@
 #include <string.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <shellapi.h>   /* DROPFILES for WM_DROPFILES */
 
 #define SRC_EDIT_ID   1066   /* 0x42a  source folder edit            */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                 */
