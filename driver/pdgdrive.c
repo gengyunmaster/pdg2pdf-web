@@ -276,6 +276,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     /* 2. open the source folder picker and submit our path */
     HWND browse = GetDlgItem(g_main, SRC_BROWSE_ID);
     if (!browse) { fprintf(stderr, "pdgdrive: browse button missing\n"); kill_app(); return 3; }
+    fprintf(stderr, "pdgdrive: browse hwnd=%lx\n", (unsigned long)browse);
     PostMessageW(browse, BM_CLICK, 0, 0);
 
     /* wait for the picker: a #32770 owned by the app, not the main window,
@@ -291,7 +292,18 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             if (e) { picker = h; ped = e; break; }
         }
     }
-    if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
+    if (!picker) {
+        fprintf(stderr, "pdgdrive: folder picker did not open; state dump:\n");
+        EnumWindows(dbg_dump, 0);
+        for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h;
+             h = FindWindowExW(NULL, h, L"#32770", NULL)) {
+            DWORD p = 0; GetWindowThreadProcessId(h, &p);
+            if (p != g_app_pid) continue;
+            fprintf(stderr, "-- dialog %lx children:\n", (unsigned long)h);
+            EnumChildWindows(h, dbg_dump, 0);
+        }
+        kill_app(); return 3;
+    }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
     SetWindowTextW(ped, src);
     Sleep(300);
