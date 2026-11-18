@@ -307,10 +307,15 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1);
     }
 
-    /* start conversion (the on-screen "4" button) */
+    /* start conversion (the on-screen "4" button); retry a few times */
     HWND btn = GetDlgItem(g_main, START_BTN_ID);
     if (!btn) { fprintf(stderr, "pdgdrive: start button missing\n"); kill_app(); return 3; }
-    SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
+    for (int a = 0; a < 5; a++) {
+        fprintf(stderr, "pdgdrive: start attempt %d enabled=%d\n",
+                a, IsWindowEnabled(btn));
+        SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
+        Sleep(5000);
+    }
 
     /* wait for the PDF; handle popups */
     DWORD start = GetTickCount();
