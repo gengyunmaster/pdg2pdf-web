@@ -12,7 +12,7 @@ import zlib
 from pathlib import Path
 
 from .imgdec import UnsupportedImage, jpeg_info, png_decode
-from .pdfdoc import Page, write_pdf
+from .pdfdoc import Page, TextPage, write_pdf
 from .pdgspec import list_pages, sniff_file
 
 
@@ -81,6 +81,22 @@ def book_supported(src_dir: Path) -> bool:
     return all(sniff_file(p) in ("jpeg", "png") for p in pages)
 
 
+
+
+def _bookinfo_lines(src_dir: Path) -> list[str]:
+    """BookInfo.dat rendered as plain text lines (GBK ini metadata)."""
+    for name in ("BookInfo.dat", "bookinfo.dat"):
+        p = src_dir / name
+        if p.exists():
+            try:
+                text = p.read_bytes().decode("gb18030", "replace")
+            except OSError:
+                return []
+            lines = [l.strip() for l in text.replace("\r", "").split("\n")]
+            return [l for l in lines if l and not l.startswith("[")]
+    return []
+
+
 def convert_book(src_dir: Path, out_pdf: Path) -> int:
     pages_src = list_pages(src_dir)
     if not pages_src:
@@ -89,6 +105,9 @@ def convert_book(src_dir: Path, out_pdf: Path) -> int:
     for p in pages_src:
         pages.append(_load_page(p))
     _normalize_width(pages)
+    info = _bookinfo_lines(src_dir)
+    if info:
+        pages.append(TextPage(info))
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     out_pdf.write_bytes(write_pdf(pages))
     return len(pages)

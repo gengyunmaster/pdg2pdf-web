@@ -60,7 +60,7 @@ def png_decode(data: bytes, packed_1bit: bool = True):
         raise UnsupportedImage("png missing IHDR")
     if colortype == 3 and not palette:
         raise UnsupportedImage("png palette missing PLTE")
-    if colortype not in (0, 3):
+    if colortype not in (0, 2, 3):
         raise UnsupportedImage(f"png colortype={colortype}")
 
     raw = zlib.decompress(bytes(idat))
@@ -88,6 +88,9 @@ def png_decode(data: bytes, packed_1bit: bool = True):
 
     if colortype == 0 and bitdepth == 8:
         return width, height, dpi, "/DeviceGray", 8, packed
+
+    if colortype == 2 and bitdepth == 8:
+        return width, height, dpi, "/DeviceRGB", 8, packed
 
     # colortype == 3 (palette), bitdepth 1/2/4/8: expand to RGB
     per_byte = 8 // bitdepth
