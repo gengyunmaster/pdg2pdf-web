@@ -266,7 +266,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     WCHAR src_win[MAX_PATH] = {0};
     unix_to_win(src, src_win, MAX_PATH);
     unix_to_win(watch, g_watch_win, MAX_PATH);
-    fprintf(stderr, "pdgdrive: src=%ls watch=%ls\n", src_win, watch_win);
+    fprintf(stderr, "pdgdrive: src=%ls watch=%ls\n", src_win, g_watch_win);
 
     /* 0. launch Pdg2Pic.exe (hidden) from the driver's own directory */
     if (!app[0]) {
