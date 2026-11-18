@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import uuid
 from pathlib import Path
 
 from ..archives import Extraction, find_pdg_files
@@ -53,7 +54,7 @@ class WinePdg2PicConverter:
         if not DRIVER.exists():
             raise RuntimeError(f"driver not built: {DRIVER} (run 'make -C driver')")
 
-        src = _book_root(extracted)
+        book = _book_root(extracted)
         stage = out_dir.parent / "wine"
         stage.mkdir(parents=True, exist_ok=True)
         exe = stage / "Pdg2Pic.exe"
@@ -62,13 +63,28 @@ class WinePdg2PicConverter:
         driver = stage / "pdgdrive.exe"
         shutil.copyfile(DRIVER, driver)
 
-        # The driver pre-seeds Pdg2Pic.ini (PARA_DIR_SRC/PARA_DIR_TGT) and
-        # clicks the start button; the app restores its state from the ini.
-        pdf_path = src / "book.pdf"
+        # Stage the book as a REAL directory on the Wine desktop: the
+        # driver's tree walk picks it there (Wine's folder picker does not
+        # enumerate drive contents, and symlinks break path resolution).
+        name = f"pdgbook_{uuid.uuid4().hex[:8]}"
+        desk = Path(env_wineprefix()) / "drive_c/users/root/Desktop"
+        desk.mkdir(parents=True, exist_ok=True)
+        staged = desk / name
+        staged.mkdir()
+        for f in book.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                os.link(f, staged / f.name)
+            except OSError:
+                shutil.copyfile(f, staged / f.name)
+        # The app writes "<source folder name>.pdf" into the user profile
+        # dir; the driver searches both locations and reports the real one.
         env = dict(os.environ)
         env.setdefault("WINEDEBUG", "-1")
-        cmd = ["wine", str(driver), "--src", str(src), "--pdf", str(pdf_path),
-               "--timeout", str(TIMEOUT)]
+        cmd = ["wine", str(driver), "--src", str(staged),
+               "--pdf", str(staged / f"{name}.pdf"),
+               "--name", name, "--timeout", str(TIMEOUT)]
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -83,13 +99,14 @@ class WinePdg2PicConverter:
                 raise RuntimeError("conversion timed out")
         finally:
             subprocess_wineserver_kill(env)
+            shutil.rmtree(staged, ignore_errors=True)
 
         text = out.decode("utf-8", "replace") if out else ""
         pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
         if proc.returncode != 0 or not pdf_line:
-            tail = "\n".join(text.splitlines()[-10:])
+            tail_txt = "\n".join(text.splitlines()[-10:])
             raise RuntimeError(
-                f"pdgdrive failed (rc={proc.returncode}): {tail}"
+                f"pdgdrive failed (rc={proc.returncode}): {tail_txt}"
             )
         pdf = Path(pdf_line[4:])
         if not pdf.exists():
@@ -97,7 +114,16 @@ class WinePdg2PicConverter:
         result = out_dir / "result.pdf"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(pdf, result)
+        # remove the PDF from the wine profile dir (best effort)
+        try:
+            pdf.unlink()
+        except OSError:
+            pass
         return result
+
+
+def env_wineprefix() -> str:
+    return os.environ.get("WINEPREFIX", str(Path.home() / ".wine"))
 
 
 def subprocess_wineserver_kill(env: dict) -> None:
