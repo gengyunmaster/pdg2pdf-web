@@ -261,9 +261,16 @@ static int ole_drop_at(const WCHAR *dir, int x, int y) {
     obj->hdrop = make_hdrop(dir);
     src->iface.lpVtbl = &ds_vtbl;
     src->refs = 1;
-    SetCursorPos(x, y);
-    mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, 0, 0, 0, 0);
-    Sleep(400);
+    {
+        int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+        INPUT in = {0};
+        in.type = INPUT_MOUSE;
+        in.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+        in.mi.dx = (LONG)((x * 65535L) / (sw > 0 ? sw : 1));
+        in.mi.dy = (LONG)((y * 65535L) / (sh > 0 ? sh : 1));
+        SendInput(1, &in, sizeof(in));
+    }
+    Sleep(600);
     {
         POINT cur; GetCursorPos(&cur);
         HWND under = WindowFromPoint(cur);
