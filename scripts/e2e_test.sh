@@ -24,8 +24,9 @@ echo "job: $JOB"
 
 for i in $(seq 1 40); do
     STATUS=$(curl -s "http://127.0.0.1:8000/api/jobs/$JOB")
+    echo "poll $i: $STATUS"
     echo "$STATUS" | grep -q '"status": "done"' && break
-    echo "$STATUS" | grep -q '"status": "error"' && { echo "$STATUS"; exit 1; }
+    echo "$STATUS" | grep -q '"status": "error"' && exit 1
     sleep 5
 done
 
