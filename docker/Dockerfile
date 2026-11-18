@@ -36,8 +36,9 @@ RUN echo "rebuilding drivers" && make -C driver \
  && rm -rf driver/*.o
 
 # Initialize a Wine prefix at build time so first boot is fast.
-# BYOB: uncomment the next line after placing Pdg2Pic.exe in vendor/.
-# COPY vendor/Pdg2Pic.exe /srv/vendor/Pdg2Pic.exe
+# BYOB: place Pdg2Pic.exe in vendor/ before building; the whole
+# directory is copied (an empty vendor/ still builds fine).
+COPY vendor/ /srv/vendor/
 RUN mkdir -p /srv/vendor \
  && WINEPREFIX=/srv/.wine xvfb-run -a wine wineboot --init \
  && wineserver -w || true
