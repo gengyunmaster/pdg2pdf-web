@@ -157,9 +157,17 @@ static HRESULT STDMETHODCALLTYPE do_GetData(IDataObject *self, FORMATETC *fmt, S
     if (fmt->cfFormat != CF_HDROP || fmt->dwAspect != DVASPECT_CONTENT ||
         fmt->tymed != TYMED_HGLOBAL) return DV_E_FORMATETC;
     med->tymed = TYMED_HGLOBAL;
-    med->hGlobal = GlobalClone(d->hdrop);
+    {
+        SIZE_T sz = GlobalSize(d->hdrop);
+        med->hGlobal = GlobalAlloc(GMEM_MOVEABLE, sz);
+        if (!med->hGlobal) return E_OUTOFMEMORY;
+        void *dst = GlobalLock(med->hGlobal);
+        void *srcl = GlobalLock(d->hdrop);
+        memcpy(dst, srcl, sz);
+        GlobalUnlock(med->hGlobal);
+        GlobalUnlock(d->hdrop);
+    }
     med->pUnkForRelease = NULL;
-    if (!med->hGlobal) return E_OUTOFMEMORY;
     return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE do_GetDataHere(IDataObject *self, FORMATETC *fmt, STGMEDIUM *med) {
@@ -258,8 +266,8 @@ static int ole_drop_at(const WCHAR *dir, int x, int y) {
     DWORD effect = 0;
     HRESULT hr = DoDragDrop((IDataObject *)obj, (IDropSource *)src,
                             DROPEFFECT_COPY, &effect);
-    IDataObject_Release((IDataObject *)obj);
-    IDropSource_Release((IDropSource *)src);
+    obj->iface.lpVtbl->Release((IDataObject *)obj);
+    src->iface.lpVtbl->Release((IDropSource *)src);
     return SUCCEEDED(hr);
 }
 
