@@ -85,10 +85,17 @@ static int drop_dir(HWND target, const WCHAR *dir) {
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)show;
     if (cmdline && strstr(cmdline, "--map")) {
-        struct find_ctx cc = { "Pdg2Pic", NULL };
-        for (int i = 0; i < 60 && !cc.found; i++) { EnumWindows(find_proc, (LPARAM)&cc); if (!cc.found) Sleep(500); }
-        if (!cc.found) { fprintf(stderr, "no main\n"); return 3; }
-        g_main = cc.found;
+        static HWND s_found = NULL;
+        static BOOL CALLBACK map_find(HWND hwnd, LPARAM lp) {
+            WCHAR t[256] = {0};
+            (void)lp;
+            GetWindowTextW(hwnd, t, 255);
+            if (wcsstr(t, L"Pdg2Pic")) { s_found = hwnd; return FALSE; }
+            return TRUE;
+        }
+        for (int i = 0; i < 60 && !s_found; i++) { EnumWindows(map_find, 0); if (!s_found) Sleep(500); }
+        if (!s_found) { fprintf(stderr, "no main\n"); return 3; }
+        g_main = s_found;
         GetWindowThreadProcessId(g_main, &g_pid);
         HANDLE hp = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ |
                                     PROCESS_VM_WRITE, FALSE, g_pid);
