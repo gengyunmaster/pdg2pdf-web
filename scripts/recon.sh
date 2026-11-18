@@ -28,5 +28,7 @@ wine /srv/driver/windowdump.exe -c Pdg2Pic || true
 echo "=== windows again (after any lazy dialogs) ==="
 wine /srv/driver/windowdump.exe || true
 
-echo "recon done; app still running (pid $APP_PID, Xvfb $XVFB_PID)"
-wait "$APP_PID" || true
+echo "recon done; killing app ($APP_PID) and Xvfb ($XVFB_PID)"
+kill "$APP_PID" "$XVFB_PID" 2>/dev/null || true
+wineserver -k 2>/dev/null || true
+exit 0
