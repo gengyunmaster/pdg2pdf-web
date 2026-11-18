@@ -341,11 +341,13 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         kill_app(); return 3;
     }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
-    SetWindowTextW(ped, src);
-    Sleep(300);
+    SetWindowTextW(ped, src);  /* cosmetic only; the edit is for new folders */
+    /* select our folder in the tree (documented BFFM_SETSELECTION) */
+    SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)src);
+    Sleep(2500);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
-    PostMessageW(ok, BM_CLICK, 0, 0);
+    SendMessageTimeoutW(ok, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
 
     /* 3. wait for the scan to populate the file list */
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
