@@ -17,6 +17,7 @@ RUN dpkg --add-architecture i386 \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
         wine wine32 xvfb xauth p7zip-full p7zip-rar \
+        tesseract-ocr tesseract-ocr-chi-sim \
         python3 python3-pip \
         gcc-mingw-w64-i686 make \
         ca-certificates curl \

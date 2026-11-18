@@ -92,6 +92,18 @@ def png_decode(data: bytes, packed_1bit: bool = True):
     if colortype == 2 and bitdepth == 8:
         return width, height, dpi, "/DeviceRGB", 8, packed
 
+    # colortype == 3 (palette). Binary gray palette with black at index 0:
+    # return packed 1-bit directly (0 = black), possibly bit-inverted.
+    if colortype == 3 and bitdepth == 1 and len(palette) >= 2:
+        grays = [p[0] for p in palette[:2]]
+        if all(palette[i][0] == palette[i][1] == palette[i][2]
+               for i in range(min(2, len(palette)))):
+            inv = grays[0] >= 128  # index 0 is white -> invert
+            if inv:
+                flip = bytes(i ^ 0xFF for i in range(256))
+                packed = packed.translate(flip)
+            return width, height, dpi, "/DeviceGray", 1, packed
+
     # colortype == 3 (palette), bitdepth 1/2/4/8: expand to RGB
     per_byte = 8 // bitdepth
     mask = (1 << bitdepth) - 1
