@@ -22,7 +22,16 @@
 #include <string.h>
 #include <windows.h>
 #include <commctrl.h>
-#include <shellapi.h>   /* DROPFILES for WM_DROPFILES */
+#include <shellapi.h>
+
+/* DROPFILES is ABI-stable; declare it locally to avoid header-guard
+ * differences across mingw-w64 versions. */
+typedef struct {
+    DWORD pFiles;
+    POINT pt;
+    BOOL  fNC;
+    BOOL  fWide;
+} DRV_DROPFILES;   /* DROPFILES for WM_DROPFILES */
 
 #define SRC_EDIT_ID   1066   /* 0x42a  source folder edit            */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                 */
@@ -140,17 +149,17 @@ static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
  * edit-control notification chain. */
 static int drop_folder(HWND target, const WCHAR *dir) {
     size_t len = wcslen(dir) + 1;              /* one path + second NUL */
-    size_t bytes = sizeof(DROPFILES) + (len + 1) * sizeof(WCHAR);
+    size_t bytes = sizeof(DRV_DROPFILES) + (len + 1) * sizeof(WCHAR);
     HGLOBAL h = GlobalAlloc(GHND | GMEM_SHARE, bytes);
     if (!h) return 0;
-    DROPFILES *df = (DROPFILES *)GlobalLock(h);
+    DRV_DROPFILES *df = (DRV_DROPFILES *)GlobalLock(h);
     if (!df) { GlobalFree(h); return 0; }
-    df->pFiles = sizeof(DROPFILES);
+    df->pFiles = sizeof(DRV_DROPFILES);
     df->pt.x = df->pt.y = 0;
     df->fNC = FALSE;
     df->fWide = TRUE;
-    memcpy((char *)df + sizeof(DROPFILES), dir, len * sizeof(WCHAR));
-    ((WCHAR *)((char *)df + sizeof(DROPFILES)))[len] = 0;
+    memcpy((char *)df + sizeof(DRV_DROPFILES), dir, len * sizeof(WCHAR));
+    ((WCHAR *)((char *)df + sizeof(DRV_DROPFILES)))[len] = 0;
     GlobalUnlock(h);
     if (!PostMessageW(target, WM_DROPFILES, (WPARAM)h, 0)) {
         GlobalFree(h);
