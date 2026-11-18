@@ -349,7 +349,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
     SendMessageTimeoutW(ok, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
 
-    /* 3. wait for the scan to populate the file list */
+    /* 3. observe the list (informational; conversion may not need it) */
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
     int items = 0;
     for (int i = 0; i < 60; i++) {
@@ -358,15 +358,17 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         Sleep(500);
     }
     fprintf(stderr, "pdgdrive: file list items=%d\n", items);
-    if (items == 0) {
-        fprintf(stderr, "pdgdrive: folder scan produced no items\n");
-        kill_app(); return 4;
-    }
 
-    /* 4. start conversion (ID 1 = the on-screen "4" step button) */
+    /* 4. make sure the source edit carries our path, then start */
+    SetDlgItemTextW(g_main, SRC_EDIT_ID, src);
+    HWND edit2 = GetDlgItem(g_main, SRC_EDIT_ID);
+    SendMessageW(g_main, WM_COMMAND,
+                 MAKEWPARAM(SRC_EDIT_ID, EN_KILLFOCUS), (LPARAM)edit2);
+    Sleep(500);
     HWND btn = GetDlgItem(g_main, START_BTN_ID);
     if (!btn) { fprintf(stderr, "pdgdrive: start button missing\n"); kill_app(); return 3; }
-    SendMessageW(btn, BM_CLICK, 0, 0);
+    fprintf(stderr, "pdgdrive: clicking start (hwnd=%lx)\n", (unsigned long)btn);
+    SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
 
     /* 5. wait for the PDF; handle popups */
     DWORD start = GetTickCount();
