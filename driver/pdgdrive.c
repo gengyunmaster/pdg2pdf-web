@@ -284,12 +284,24 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* sanity: the restored source path should sit in the edit */
+    /* sanity + dual-edit seeding: fill both edits and fire notifications */
     Sleep(1500);
-    {
+    const UINT edits[2] = { 1066 /* 0x42a */, 1064 /* 0x428 */ };
+    for (int e = 0; e < 2; e++) {
+        SetDlgItemTextW(g_main, edits[e], src_win);
+        HWND he = GetDlgItem(g_main, edits[e]);
+        SendMessageW(g_main, WM_COMMAND,
+                     MAKEWPARAM(edits[e], EN_CHANGE), (LPARAM)he);
+        SendMessageW(g_main, WM_COMMAND,
+                     MAKEWPARAM(edits[e], EN_KILLFOCUS), (LPARAM)he);
+    }
+    Sleep(800);
+    for (int e = 0; e < 2; e++) {
         WCHAR cur[512] = {0};
-        GetDlgItemTextW(g_main, SRC_EDIT_ID, cur, 511);
-        fprintf(stderr, "pdgdrive: source edit: "); utf8_print(stderr, cur);
+        GetDlgItemTextW(g_main, edits[e], cur, 511);
+        fprintf(stderr, "pdgdrive: edit %u: ", edits[e]); utf8_print(stderr, cur);
+    }
+    {
         HWND list = GetDlgItem(g_main, FILE_LIST_ID);
         fprintf(stderr, "pdgdrive: list items=%ld\n",
                 list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1);
