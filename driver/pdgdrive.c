@@ -51,6 +51,7 @@ static DWORD g_app_pid = 0;
 static HWND  g_main = NULL;
 static PROCESS_INFORMATION g_pi = {0};
 static WCHAR g_watch_win[MAX_PATH] = {0};
+static HANDLE g_app_proc = NULL;
 
 static void kill_app(void) {
     if (g_pi.hProcess) {
@@ -182,6 +183,105 @@ static HWND find_ctrl(HWND root, UINT id) {
     struct find_ctx2 c = { id, NULL };
     EnumChildWindows(root, find_by_id, (LPARAM)&c);
     return c.found;
+}
+
+
+/* ---- cross-process tree-view access ------------------------------- */
+static int ci_eq(const WCHAR *a, const WCHAR *b) {
+    while (*a && *b) {
+        WCHAR x = *a, y = *b;
+        if (x >= L'A' && x <= L'Z') x += 32;
+        if (y >= L'A' && y <= L'Z') y += 32;
+        if (x != y) return 0;
+        a++; b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+static int remote_item_text(HWND tree, HTREEITEM item, WCHAR *out, size_t cap) {
+    SIZE_T need = sizeof(TVITEMW) + cap * sizeof(WCHAR);
+    LPVOID base = VirtualAllocEx(g_app_proc, NULL, need, MEM_COMMIT, PAGE_READWRITE);
+    if (!base) return 0;
+    TVITEMW ti;
+    ZeroMemory(&ti, sizeof(ti));
+    ti.mask = TVIF_TEXT | TVIF_HANDLE;
+    ti.hItem = item;
+    ti.pszText = (LPWSTR)((char *)base + sizeof(TVITEMW));
+    ti.cchTextMax = (int)cap - 1;
+    SIZE_T wr = 0;
+    if (!WriteProcessMemory(g_app_proc, base, &ti, sizeof(ti), &wr) ||
+        wr < sizeof(ti)) { VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE); return 0; }
+    LRESULT ok = SendMessageW(tree, TVM_GETITEMW, 0, (LPARAM)base);
+    if (!ok) { VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE); return 0; }
+    ZeroMemory(out, cap * sizeof(WCHAR));
+    SIZE_T rd = 0;
+    ReadProcessMemory(g_app_proc, ti.pszText, out, (cap - 1) * sizeof(WCHAR), &rd);
+    VirtualFreeEx(g_app_proc, base, 0, MEM_RELEASE);
+    out[cap - 1] = 0;
+    return 1;
+}
+
+static HTREEITEM find_child_by_text(HWND tree, HTREEITEM parent,
+                                    const WCHAR *name) {
+    HTREEITEM it = (HTREEITEM)SendMessageW(
+        tree, TVM_GETNEXTITEM, parent ? TVGN_CHILD : TVGN_ROOT, (LPARAM)parent);
+    while (it) {
+        WCHAR t[256] = {0};
+        if (remote_item_text(tree, it, t, 256) && ci_eq(t, name)) return it;
+        it = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)it);
+    }
+    return NULL;
+}
+
+/* Walk the picker tree to winpath (e.g. Z:\tmp\w), expanding and
+ * selecting each component. Returns 1 when the leaf got the caret. */
+static int pick_path_in_tree(HWND tree, const WCHAR *winpath) {
+    if (!tree || !g_app_proc) return 0;
+    WCHAR buf[MAX_PATH] = {0};
+    wcsncpy(buf, winpath, MAX_PATH - 1);
+    /* split into components on backslash */
+    WCHAR *comps[32]; int nc = 0;
+    WCHAR *p = buf;
+    while (*p && nc < 32) {
+        while (*p == L'\\') p++;
+        if (!*p) break;
+        comps[nc++] = p;
+        while (*p && *p != L'\\') p++;
+        if (*p) *p++ = 0;
+    }
+    HTREEITEM cur = NULL;
+    for (int i = 0; i < nc; i++) {
+        const WCHAR *comp = comps[i];
+        HTREEITEM next = find_child_by_text(tree, cur, comp);
+        if (!next && i == 0 && comp[1] == L':') {
+            /* drives live under My Computer */
+            static const WCHAR MC[] = {0x6211,0x7684,0x7535,0x8111,0}; /* 我的电脑 */
+            HTREEITEM mc = find_child_by_text(tree, NULL, MC);
+            if (!mc) mc = find_child_by_text(tree, NULL, L"My Computer");
+            if (mc) {
+                SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)mc);
+                Sleep(300);
+                cur = mc;
+                next = find_child_by_text(tree, cur, comp);
+            }
+        }
+        if (!next) {
+            fprintf(stderr, "pdgdrive: tree component not found: ");
+            /* comp is WCHAR*; log via utf8 */
+            int n8 = WideCharToMultiByte(CP_UTF8, 0, comp, -1, NULL, 0, NULL, NULL);
+            char *b8 = (char *)malloc((size_t)n8 + 1);
+            WideCharToMultiByte(CP_UTF8, 0, comp, -1, b8, n8, NULL, NULL);
+            fprintf(stderr, "%s\n", b8);
+            free(b8);
+            return 0;
+        }
+        if (cur) SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)cur);
+        Sleep(200);
+        SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)next);
+        Sleep(200);
+        cur = next;
+    }
+    return 1;
 }
 
 static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
@@ -372,12 +472,20 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             (unsigned long)tree,
             tree ? (long)SendMessageW(tree, TVM_GETCOUNT, 0, 0) : -1,
             (unsigned long)ok0, ok0 && IsWindowEnabled(ok0));
-    /* select our folder in the tree (documented BFFM_SETSELECTION) */
-    SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)src_win);
-    Sleep(2500);
-    fprintf(stderr, "pdgdrive: after BFFM ok enabled=%d count=%ld\n",
-            ok0 && IsWindowEnabled(ok0),
-            tree ? (long)SendMessageW(tree, TVM_GETCOUNT, 0, 0) : -1);
+    /* select our folder via cross-process tree walking */
+    g_app_proc = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ |
+                                 PROCESS_VM_WRITE,
+                             FALSE, g_app_pid);
+    if (!g_app_proc) {
+        fprintf(stderr, "pdgdrive: OpenProcess failed %lu\n", GetLastError());
+        kill_app(); return 3;
+    }
+    int picked = tree ? pick_path_in_tree(tree, src_win) : 0;
+    fprintf(stderr, "pdgdrive: tree pick=%d ok_enabled=%d\n",
+            picked, ok0 ? IsWindowEnabled(ok0) : -1);
+    for (int i = 0; i < 30 && ok0 && !IsWindowEnabled(ok0); i++) Sleep(300);
+    fprintf(stderr, "pdgdrive: before OK, enabled=%d\n",
+            ok0 ? IsWindowEnabled(ok0) : -1);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
     SendMessageTimeoutW(ok, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
