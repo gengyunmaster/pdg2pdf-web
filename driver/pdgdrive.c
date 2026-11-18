@@ -282,12 +282,23 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* 2. feed the source folder via a synthetic drag-and-drop */
-    SetDlgItemTextW(g_main, SRC_EDIT_ID, src); /* cosmetic mirror */
+    /* 2. feed the source folder: edit text + synthetic notifications */
+    HWND edit = GetDlgItem(g_main, SRC_EDIT_ID);
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
+    fprintf(stderr, "pdgdrive: edit=%lx list=%lx\n",
+            (unsigned long)edit, (unsigned long)list);
+    if (!edit) { fprintf(stderr, "pdgdrive: source edit not found\n"); kill_app(); return 3; }
+    SetDlgItemTextW(g_main, SRC_EDIT_ID, src);
+    WCHAR back[512] = {0};
+    GetDlgItemTextW(g_main, SRC_EDIT_ID, back, 511);
+    fprintf(stderr, "pdgdrive: edit now: "); utf8_print(stderr, back);
+    /* fire both kill-focus and change notifications like a real user would */
+    SendMessageW(g_main, WM_COMMAND,
+                 MAKEWPARAM(SRC_EDIT_ID, EN_KILLFOCUS), (LPARAM)edit);
+    SendMessageW(g_main, WM_COMMAND,
+                 MAKEWPARAM(SRC_EDIT_ID, EN_CHANGE), (LPARAM)edit);
     if (!drop_folder(g_main, src)) {
         fprintf(stderr, "pdgdrive: WM_DROPFILES failed\n");
-        kill_app(); return 3;
     }
 
     /* 3. wait for the scan to populate the file list */
