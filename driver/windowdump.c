@@ -49,9 +49,10 @@ static BOOL CALLBACK top_proc(HWND hwnd, LPARAM lp) {
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)show;
     if (cmdline && strstr(cmdline, "--close")) {
-        for (int i = 0; i < 60 && !g_main; i++) { EnumWindows(main_enum, 0); if (!g_main) Sleep(500); }
-        if (!g_main) { fprintf(stderr, "no main\n"); return 3; }
-        PostMessageW(g_main, WM_CLOSE, 0, 0);
+        struct find_ctx c = { "Pdg2Pic", NULL };
+        EnumWindows(find_proc, (LPARAM)&c);
+        if (!c.found) { fprintf(stderr, "no main\n"); return 3; }
+        PostMessageW(c.found, WM_CLOSE, 0, 0);
         Sleep(4000);
         return 0;
     }
