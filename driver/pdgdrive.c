@@ -539,10 +539,7 @@ static int write_ini(const WCHAR *ini_path, const WCHAR *src_win,
     static const BYTE bom[] = {0xFF, 0xFE};
     fwrite(bom, 1, sizeof(bom), f);
     fwprintf(f, L"[ParaBlock]\r\n");
-    fwprintf(f, L"PARA_DIR_SRC=%s\r\n", src_win);
-    fwprintf(f, L"PARA_DIR_TGT=%s\r\n", pdf_win);
     fwprintf(f, L"PARA_TGT_TYPE=1\r\n");   /* 1 = PDF file target */
-    fwprintf(f, L"PARA_TGT_AS_SRC=0\r\n");
     fwprintf(f, L"PARA_AUTO_CHK=0\r\n");   /* no auto statistics dialog */
     fwprintf(f, L"PARA_PREVIEW=0\r\n");    /* no preview decode */
     fclose(f);
