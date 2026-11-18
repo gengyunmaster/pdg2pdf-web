@@ -271,6 +271,13 @@ static int pick_path_in_tree(HWND tree, const WCHAR *winpath) {
                 }
             }
         }
+        if (!next && cur && i == 1) {
+            WCHAR t0[64] = {0};
+            if (remote_item_text(tree, cur, t0, 64) && ci_eq(t0, L"Z:")) {
+                fprintf(stderr, "pdgdrive: bypassing folder-not-loaded case\n");
+                return 2;
+            }
+        }
         if (!next) {
             fprintf(stderr, "pdgdrive: tree component not found: ");
             /* comp is WCHAR*; log via utf8 */
@@ -509,6 +516,13 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     int picked = tree ? pick_path_in_tree(tree, src_win) : 0;
     fprintf(stderr, "pdgdrive: tree pick=%d ok_enabled=%d\n",
             picked, ok0 ? IsWindowEnabled(ok0) : -1);
+    if (picked == 2) {
+        WCHAR zb[] = {L'Z', L':', L'\', 0};
+        SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)zb);
+        Sleep(2500);
+        fprintf(stderr, "pdgdrive: BFFM(Z:\\) ok_enabled=%d\n",
+                ok0 ? IsWindowEnabled(ok0) : -1);
+    }
     for (int i = 0; i < 30 && ok0 && !IsWindowEnabled(ok0); i++) Sleep(300);
     fprintf(stderr, "pdgdrive: before OK, enabled=%d\n",
             ok0 ? IsWindowEnabled(ok0) : -1);
