@@ -106,7 +106,11 @@ class WinePdg2PicConverter:
 
         print("[worker] driver finished", flush=True)
         text = out.decode("utf-8", "replace") if out else ""
-        pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
+        pdf_line = next(
+            (l for l in text.splitlines()
+             if l.startswith("PDF=") or l.startswith("COLLECT=")),
+            None,
+        )
         if proc.returncode != 0 or not pdf_line:
             tail_txt = "\n".join(text.splitlines()[-10:])
             raise RuntimeError(
@@ -117,7 +121,7 @@ class WinePdg2PicConverter:
             pdf = collect
         else:
             pdf = _locate_pdf(wine_path_to_unix(pdf_line[4:]), staged)
-        result = out_dir / "result.pdf"
+        result = out_dir / "book.pdf"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(pdf, result)
         # remove the PDF from the wine profile dir (best effort)
