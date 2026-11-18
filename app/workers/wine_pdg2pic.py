@@ -84,6 +84,7 @@ class WinePdg2PicConverter:
         env.setdefault("WINEDEBUG", "-1")
         cmd = ["wine", str(driver), "--src", str(staged),
                "--pdf", str(staged / f"{name}.pdf"),
+               "--home", os.environ.get("HOME", "/root"),
                "--name", name, "--timeout", str(TIMEOUT)]
 
         try:
