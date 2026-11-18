@@ -1,3 +1,4 @@
+
 """CCITT T.6 (Group 4) encoder for bitonal images.
 
 Pure-python, table driven. Validation strategy: the encoded streams are
@@ -88,26 +89,34 @@ V = {0: (0b1, 1), (1, "r"): (0b011, 3), (-1, "l"): (0b010, 3),
 EOFB = 0b000000000001000000000001
 
 
+import bisect
+
+
 class _Bits:
+    __slots__ = ("buf", "acc", "n")
+
     def __init__(self):
         self.buf = bytearray()
         self.acc = 0
         self.n = 0
 
     def put(self, code: int, length: int) -> None:
-        for i in range(length - 1, -1, -1):
-            self.acc = (self.acc << 1) | ((code >> i) & 1)
-            self.n += 1
-            if self.n == 8:
-                self.buf.append(self.acc)
-                self.acc = 0
-                self.n = 0
+        self.acc = (self.acc << length) | code
+        self.n += length
+        if self.n >= 8:
+            self.n -= 8
+            self.buf.append((self.acc >> self.n) & 0xFF)
+            self.acc &= (1 << self.n) - 1
 
     def align(self) -> None:
         if self.n:
             self.put(0, 8 - self.n)
 
     def bytes(self) -> bytes:
+        if self.n:
+            self.buf.append((self.acc << (8 - self.n)) & 0xFF)
+            self.acc = 0
+            self.n = 0
         return bytes(self.buf)
 
 
@@ -126,8 +135,33 @@ def _run_codes(run: int, white: bool) -> list[tuple[int, int]]:
     return out
 
 
+_TRANS = []
+for _b in range(256):
+    _bits = [(_b >> (7 - i)) & 1 for i in range(8)]
+    _TRANS.append((_bits[0], _bits[-1],
+                   [i for i in range(1, 8) if _bits[i] != _bits[i - 1]]))
+
+
+def _ce_packed(row: bytes, width: int) -> list[int]:
+    """Changing elements of a packed 1-bit row (fast, table driven)."""
+    ce = []
+    prev = 0
+    nbytes = (width + 7) // 8
+    for bi in range(nbytes):
+        first, last, trans = _TRANS[row[bi]]
+        base = bi * 8
+        if first != prev and base < width:
+            ce.append(base)
+        for t in trans:
+            x = base + t
+            if x < width:
+                ce.append(x)
+        prev = last
+    ce.append(width)
+    return ce
+
+
 def _changing_elements(line: list[int], width: int) -> list[int]:
-    """positions where color changes, ending with width"""
     ce = []
     prev = 0
     for x in range(width):
@@ -142,18 +176,11 @@ def encode_g4(pixels: bytes, width: int, height: int) -> bytes:
     """pixels: packed 1-bit rows (MSB first, 0=black), row stride padded."""
     stride = (width + 7) // 8
     bw = _Bits()
-    ref: list[int] = [0] * (width + 1)  # all-white reference (values 0/1)
-    ref = _changing_elements(ref[:-1], width)
+    ref = [width]  # all-white reference line
     for y in range(height):
-        row = pixels[y * stride:(y + 1) * stride]
-        # unpack row bits
-        bits = []
-        for x in range(width):
-            bits.append((row[x // 8] >> (7 - x % 8)) & 1)
-        ce = _changing_elements(bits, width)
+        ce = _ce_packed(pixels[y * stride:(y + 1) * stride], width)
         _encode_row(bw, ce, ref, width)
         ref = ce
-    # EOFB
     bw.put(EOFB >> 12, 12)
     bw.put(EOFB & 0xFFF, 12)
     bw.align()
@@ -169,10 +196,9 @@ def _encode_row(bw: _Bits, ce: list[int], ref: list[int],
     run_start = 0
     i = 0  # index into ce
     while True:
-        b1 = _next_ref_ce(ref, a0)
+        b1, b2 = _ref_ce_after(ref, a0)
         a1 = ce[i] if i < len(ce) else width
         a2 = ce[i + 1] if i + 1 < len(ce) else width
-        b2 = _next_ref_ce(ref, b1)
         if b2 < a1:
             bw.put(*PASS)
             a0 = b2
@@ -200,13 +226,22 @@ def _encode_row(bw: _Bits, ce: list[int], ref: list[int],
             break
 
 
+_INF = 1 << 30
+
+
 def _next_ref_ce(ref: list[int], pos: int) -> int:
     """First changing element strictly right of pos on the reference
     line (T.6 definition of b1/b2)."""
-    for x in ref:
-        if x > pos:
-            return x
-    return 1 << 30
+    i = bisect.bisect_right(ref, pos)
+    return ref[i] if i < len(ref) else _INF
+
+
+def _ref_ce_after(ref: list[int], pos: int):
+    """(b1, b2) pair after pos."""
+    i = bisect.bisect_right(ref, pos)
+    b1 = ref[i] if i < len(ref) else _INF
+    b2 = ref[i + 1] if i + 1 < len(ref) else _INF
+    return b1, b2
 
 
 # --- spec-based decoder (for validation and tests) ----------------------
@@ -290,16 +325,14 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
             if kind == "V":
                 b1 = _next_ref_ce(ref, a0)
                 a1 = max(0, min(width, b1 + val))
-                if color:
-                    for x in range(run_start, a1):
-                        row[x] = 1
+                if color and a1 > run_start:
+                    row[run_start:a1] = b"\x01" * (a1 - run_start)
                 ref_new.append(a1)
                 a0 = a1
                 color ^= 1
                 run_start = a1
             elif kind == "P":
-                b1 = _next_ref_ce(ref, a0)
-                b2 = _next_ref_ce(ref, b1)
+                _b1, b2 = _ref_ce_after(ref, a0)
                 a0 = b2 if b2 < (1 << 29) else width
             else:  # H
                 runs = []
@@ -318,11 +351,11 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
                 a1 = start + runs[0]
                 a2 = a1 + runs[1]
                 if color:
-                    for x in range(start, min(a1, width)):
-                        row[x] = 1
+                    lo, hi = max(0, start), min(a1, width)
                 else:
-                    for x in range(max(a1, 0), min(a2, width)):
-                        row[x] = 1
+                    lo, hi = max(0, a1), min(a2, width)
+                if hi > lo:
+                    row[lo:hi] = b"\x01" * (hi - lo)
                 ref_new.extend([min(a1, width), min(a2, width)])
                 a0 = a2
                 run_start = a2
