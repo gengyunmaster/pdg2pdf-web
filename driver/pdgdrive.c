@@ -186,11 +186,70 @@ static HRESULT STDMETHODCALLTYPE do_GetCanonicalFormatEtc(IDataObject *self, FOR
 static HRESULT STDMETHODCALLTYPE do_SetData(IDataObject *self, FORMATETC *fmt, STGMEDIUM *med, BOOL release) {
     (void)self; (void)fmt; (void)med; (void)release; return E_NOTIMPL;
 }
-static HRESULT STDMETHODCALLTYPE do_EnumFormatEtc(IDataObject *self, DWORD dir, IEnumFORMATETC **pp) {
-    (void)self; (void)dir;
+typedef struct {
+    IEnumFORMATETC iface;
+    LONG refs;
+    ULONG pos;
+} EnumFmt;
+
+static HRESULT STDMETHODCALLTYPE ef_QueryInterface(IUnknown *self, REFIID riid, void **pp) {
     if (!pp) return E_POINTER;
     *pp = NULL;
-    return E_NOTIMPL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IEnumFORMATETC)) {
+        *pp = self; self->lpVtbl->AddRef(self); return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE ef_AddRef(IUnknown *self) {
+    EnumFmt *e = (EnumFmt *)self; return InterlockedIncrement(&e->refs);
+}
+static ULONG STDMETHODCALLTYPE ef_Release(IUnknown *self) {
+    EnumFmt *e = (EnumFmt *)self; LONG r = InterlockedDecrement(&e->refs);
+    if (r == 0) free(e); return r;
+}
+static HRESULT STDMETHODCALLTYPE ef_Next(IEnumFORMATETC *self, ULONG n, FORMATETC *arr, ULONG *got) {
+    EnumFmt *e = (EnumFmt *)self;
+    ULONG i = 0;
+    static const FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    while (i < n && e->pos == 0) { arr[i++] = fmt; e->pos++; }
+    if (got) *got = i;
+    return i == n ? S_OK : S_FALSE;
+}
+static HRESULT STDMETHODCALLTYPE ef_Skip(IEnumFORMATETC *self, ULONG n) {
+    EnumFmt *e = (EnumFmt *)self;
+    if (e->pos + n > 1) { e->pos = 1; return S_FALSE; }
+    e->pos += n; return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE ef_Reset(IEnumFORMATETC *self) {
+    ((EnumFmt *)self)->pos = 0; return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE ef_Clone(IEnumFORMATETC *self, IEnumFORMATETC **pp) {
+    EnumFmt *e = (EnumFmt *)self;
+    if (!pp) return E_POINTER;
+    EnumFmt *c = (EnumFmt *)calloc(1, sizeof(EnumFmt));
+    if (!c) return E_OUTOFMEMORY;
+    c->iface.lpVtbl = self->lpVtbl;
+    c->refs = 1;
+    c->pos = e->pos;
+    *pp = (IEnumFORMATETC *)c;
+    return S_OK;
+}
+static IEnumFORMATETCVtbl ef_vtbl = {
+    ef_QueryInterface, ef_AddRef, ef_Release,
+    ef_Next, ef_Skip, ef_Reset, ef_Clone
+};
+
+static HRESULT STDMETHODCALLTYPE do_EnumFormatEtc(IDataObject *self, DWORD dir, IEnumFORMATETC **pp) {
+    (void)self;
+    if (!pp) return E_POINTER;
+    *pp = NULL;
+    if (dir != DATADIR_GET) return E_NOTIMPL;
+    EnumFmt *e = (EnumFmt *)calloc(1, sizeof(EnumFmt));
+    if (!e) return E_OUTOFMEMORY;
+    e->iface.lpVtbl = &ef_vtbl;
+    e->refs = 1;
+    *pp = (IEnumFORMATETC *)e;
+    return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE do_DAdvise(IDataObject *self, FORMATETC *fmt, DWORD advf, IAdviseSink *sink, DWORD *conn) {
     (void)self; (void)fmt; (void)advf; (void)sink; (void)conn; return OLE_E_ADVISENOTSUPPORTED;
