@@ -125,8 +125,20 @@ def convert_book(src_dir: Path, out_pdf: Path,
     if info and pages:
         pages.append(TextPage(info, width_pt=pages[0].width_px * 72.0 / pages[0].dpi,
                               height_pt=pages[0].height_px * 72.0 / pages[0].dpi))
-    outlines = [OutlineEntry(title, idx)
-                for title, idx in default_bookmarks([p.name for p in pages_src])]
+    outlines = []
+    bc = None
+    for name in ("bookcontents.dat", "catalog.dat"):
+        cand = src_dir / name
+        if cand.exists():
+            bc = cand
+            break
+    if bc is not None:
+        from .pdgspec import parse_bookcontents  # noqa: PLC0415
+        outlines = parse_bookcontents(bc)
+    if not outlines:
+        outlines = [OutlineEntry(title, idx)
+                    for title, idx in
+                    default_bookmarks([p.name for p in pages_src])]
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     out_pdf.write_bytes(write_pdf(pages, outlines=outlines))
     return len(pages)

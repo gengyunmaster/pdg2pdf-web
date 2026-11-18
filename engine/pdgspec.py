@@ -112,3 +112,54 @@ def default_bookmarks(names: list[str]) -> list[tuple[str, int]]:
                 else len(classes) - 1))
     out.sort(key=lambda t: (t[0], t[2]))
     return [(title, idx) for _rank, title, idx in out]
+
+
+def parse_bookcontents(path) -> list:
+    """Best-effort parser for bookcontents.dat / catalog.dat.
+
+    Line format (no sample in the corpus): indentation (tab or spaces)
+    expresses depth; the page number is the last |- or tab-separated
+    field. Returns nested OutlineEntry-compatible tuples
+    (title, page_index, children).
+    """
+    from .pdfdoc import OutlineEntry  # local import avoids a cycle
+
+    def make(entries, depth=0):
+        out = []
+        i = 0
+        while i < len(entries):
+            d, title, page = entries[i]
+            if d < depth:
+                break
+            if d > depth:
+                sub, i = make(entries[i:], d)
+                if out:
+                    out[-1].children = sub
+                continue
+            out.append(OutlineEntry(title, page))
+            i += 1
+        return out, i
+
+    entries = []
+    try:
+        text = path.read_bytes().decode("gb18030", "replace")
+    except OSError:
+        return []
+    for line in text.replace("\r", "").split("\n"):
+        if not line.strip():
+            continue
+        stripped = line.lstrip("\t ")
+        depth = (len(line) - len(stripped))
+        depth = line[:len(line) - len(stripped)].count("\t") or depth // 2
+        fields = [f.strip() for f in stripped.replace("|", "\t").split("\t")]
+        fields = [f for f in fields if f]
+        if not fields:
+            continue
+        try:
+            page = int(fields[-1]) - 1
+        except ValueError:
+            continue
+        title = " ".join(fields[:-1]) or fields[-1]
+        entries.append((depth, title, page))
+    tree, _ = make(entries, 0)
+    return tree
