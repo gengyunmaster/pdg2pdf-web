@@ -17,3 +17,7 @@ def book_root_or_raise(extracted: Extraction) -> Path:
     for p in pdgs:
         counts[p.parent] = counts.get(p.parent, 0) + 1
     return max(counts, key=counts.get)
+
+
+class FallbackToWine(Exception):
+    """The native engine cannot handle this book; retry with the wrapper."""

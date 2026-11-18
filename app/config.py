@@ -24,8 +24,9 @@ PASSWORD_LIST_FILE = (
 
 MAX_UPLOAD_BYTES = int(os.environ.get("PDG2PDF_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
 
-# "wine_pdg2pic" (Phase A wrapper) or "echo" (self-test backend, no Wine).
-CONVERTER_BACKEND = os.environ.get("PDG2PDF_CONVERTER", "wine_pdg2pic")
+# "auto" (native engine, Wine fallback), "native", "wine_pdg2pic",
+# or "echo" (self-test backend, no Wine).
+CONVERTER_BACKEND = os.environ.get("PDG2PDF_CONVERTER", "auto")
 
 # Path to the deployer-provided Pdg2Pic executable (BYOB, not shipped here).
 PDG2PIC_EXE = Path(os.environ.get("PDG2PIC_EXE", "/srv/vendor/Pdg2Pic.exe"))

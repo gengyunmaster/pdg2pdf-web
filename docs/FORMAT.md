@@ -94,6 +94,26 @@ yet fully pinned down. It will be recovered by:
 3. validating the self-developed decoder against the reference outputs
    until byte-identical page images are produced.
 
+## 6b. The encrypted V2 container family (corpus findings)
+
+A minority of pages (~6% of our corpus) live in a container with magic
+``48 48`` (``"HH"``) plus a 2-byte variant tag (observed: ``02 00``,
+``02 4a``). Differential analysis against the reference outputs shows:
+
+- page width/height as little-endian u16 pair at offset 16;
+- a layer directory of 20-byte records ``[u32 payload_offset]
+  [u32 payload_length] ...``; records start after the fixed header
+  (observed at offset 24 for a single-layer file, offset 152 for a
+  multi-layer one; layer payloads are packed contiguously to EOF);
+- JPEG layers are self-delimiting and can be walked by scanning for
+  ``FF D8 FF`` / ``FF D9`` pairs;
+- the bitonal base layer payload is NOT stored verbatim: it is
+  transformed (high entropy; not XOR/reversal/bit-reversal, not
+  zlib/gzip/bz2/lzma). Decryption requires reverse engineering of the
+  reference decoder (10 code sites compare against ``0x4848``; the
+  dispatch cluster sits around file offset 0x5c6667). Until then, books
+  containing such pages are converted by the optional Wine backend.
+
 ## 7. Out of scope
 
 - Encrypted/DRM-protected PDG (unsupported by the reference tool as well).

@@ -46,7 +46,7 @@ RUN mkdir -p /srv/vendor \
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-ENV PDG2PDF_CONVERTER=wine_pdg2pic \
+ENV PDG2PDF_CONVERTER=auto \
     PDG2PIC_EXE=/srv/vendor/Pdg2Pic.exe \
     PDG2PDF_DATA_DIR=/srv/data \
     WINEPREFIX=/srv/.wine

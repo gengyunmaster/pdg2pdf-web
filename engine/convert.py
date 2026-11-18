@@ -70,6 +70,17 @@ def _normalize_width(pages: list[Page]) -> None:
         pg.dpi = pg.width_px * 72.0 / max_w
 
 
+def book_supported(src_dir: Path) -> bool:
+    """True when every page is a self-describing image (jpeg/png). The
+    encrypted V2 'HH' container family and DjVu/JP2/TIFF payloads are not
+    yet handled by the self-developed engine."""
+    from .pdgspec import sniff_file
+    pages = list_pages(src_dir)
+    if not pages:
+        return False
+    return all(sniff_file(p) in ("jpeg", "png") for p in pages)
+
+
 def convert_book(src_dir: Path, out_pdf: Path) -> int:
     pages_src = list_pages(src_dir)
     if not pages_src:
