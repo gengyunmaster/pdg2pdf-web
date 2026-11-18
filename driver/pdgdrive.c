@@ -291,8 +291,16 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
 
-    HWND ped = find_ctrl(picker, PICKER_EDIT_ID);
-    if (!ped) { fprintf(stderr, "pdgdrive: picker edit not found\n"); kill_app(); return 3; }
+    HWND ped = NULL;
+    for (int i = 0; i < 20 && !ped; i++) {
+        ped = find_ctrl(picker, PICKER_EDIT_ID);
+        if (!ped) Sleep(500);
+    }
+    if (!ped) {
+        fprintf(stderr, "pdgdrive: picker edit not found; children:\n");
+        EnumChildWindows(picker, dbg_dump, 0);
+        kill_app(); return 3;
+    }
     SetWindowTextW(ped, src);
     Sleep(300);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
