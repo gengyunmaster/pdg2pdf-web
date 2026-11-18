@@ -1,4 +1,4 @@
-"""Minimal image-only PDF writer (stdlib only)."""
+"""Minimal image-only PDF writer with a plain-text appendix page (stdlib)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,12 +10,31 @@ class Page:
     height_px: int
     dpi: int
     colorspace: str          # /DeviceGray or /DeviceRGB
-    bits: int                # 8
+    bits: int                # 1 or 8
     stream: bytes            # image samples (raw) or DCT data
     filter: str              # /FlateDecode or /DCTDecode
 
 
-def write_pdf(pages: list[Page]) -> bytes:
+@dataclass
+class TextPage:
+    """A page of plain text (the BookInfo.dat appendix page)."""
+    lines: list[str]
+    width_pt: float = 595.0
+    height_pt: float = 842.0
+
+
+def _text_stream(tp: TextPage) -> bytes:
+    def esc(t: str) -> str:
+        return t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    parts = ["BT /F1 10 Tf 36 %d Td 12 TL" % (int(tp.height_pt) - 48)]
+    for line in tp.lines[:60]:
+        parts.append(f"({esc(line)}) Tj T*")
+    parts.append("ET")
+    return "\n".join(parts).encode("latin-1", "replace")
+
+
+def write_pdf(pages: list[Page | TextPage]) -> bytes:
     objs: list[bytes] = []
 
     def add(body: bytes) -> int:
@@ -24,9 +43,23 @@ def write_pdf(pages: list[Page]) -> bytes:
 
     add(b"<< /Type /Catalog /Pages 2 0 R >>")
     add(b"")  # pages tree placeholder (object 2)
+    font_id = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
 
     page_ids = []
     for pg in pages:
+        if isinstance(pg, TextPage):
+            content = _text_stream(pg)
+            cont = add(
+                f"<< /Length {len(content)} >>\nstream\n".encode()
+                + content + b"\nendstream"
+            )
+            page_ids.append(add(
+                f"<< /Type /Page /Parent 2 0 R ".encode()
+                + f"/MediaBox [0 0 {pg.width_pt:.2f} {pg.height_pt:.2f}] ".encode()
+                + f"/Resources << /Font << /F1 {font_id} 0 R >> >> ".encode()
+                + f"/Contents {cont} 0 R >>".encode()
+            ))
+            continue
         img = add(
             b"<< /Type /XObject /Subtype /Image "
             + f"/Width {pg.width_px} /Height {pg.height_px} ".encode()

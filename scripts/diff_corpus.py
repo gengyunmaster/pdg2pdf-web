@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import struct
 import sys
 import tempfile
 from collections import Counter
@@ -33,16 +34,39 @@ def page_boxes(pdf: bytes) -> list[tuple[int, int]]:
         rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", pdf)]
 
 
+def _jpeg_normalize(raw: bytes) -> bytes:
+    """Drop APP14 (Adobe) segments; the reference tool adds/removes them."""
+    out = bytearray(raw[:2])
+    pos = 2
+    while pos + 4 <= len(raw) and raw[pos] == 0xFF:
+        marker = raw[pos + 1]
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            out += raw[pos:pos + 2]
+            pos += 2
+            continue
+        (length,) = struct.unpack(">H", raw[pos + 2:pos + 4])
+        if marker != 0xEE:
+            out += raw[pos:pos + 2 + length]
+        pos += 2 + length
+        if marker == 0xDA:
+            out += raw[pos:]
+            break
+    return bytes(out)
+
+
 def compare(engine_pdf: bytes, oracle_pdf: bytes) -> dict:
     eb, ob = page_boxes(engine_pdf), page_boxes(oracle_pdf)
     eng_imgs = extract_images(engine_pdf)
     orc_imgs = extract_images(oracle_pdf)
-    by_dim: dict[tuple[int | None, int | None], list[bytes]] = {}
+    idx: dict[tuple, list[bytes]] = {}
     for im in orc_imgs:
-        by_dim.setdefault((im.width, im.height), []).append(im.raw)
+        key = (im.width, im.height)
+        idx.setdefault(key, []).append(im.raw)
+        idx.setdefault(key, []).append(_jpeg_normalize(im.raw))
     identical = sum(
         1 for im in eng_imgs
-        if any(c == im.raw for c in by_dim.get((im.width, im.height), [])))
+        if any(c == im.raw or c == _jpeg_normalize(im.raw)
+               for c in idx.get((im.width, im.height), [])))
     return {
         "engine_pages": len(eb), "oracle_pages": len(ob),
         "pages_match": len(eb) == len(ob),
