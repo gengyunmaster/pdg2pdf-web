@@ -35,8 +35,7 @@ Browser ──upload archive──▶ FastAPI ──job queue──▶ Worker �
 mkdir -p vendor
 cp /path/to/Pdg2Pic.exe vendor/
 
-# 2. (Optional) prepare a password list for encrypted archives
-cp /path/to/passwords.txt vendor/passwords.txt   # mounted read-only
+# 2. Build and run (the archive password word list is bundled, nothing else to prepare)
 
 docker compose up --build
 # open http://localhost:8000
@@ -48,9 +47,18 @@ Environment variables:
 |---|---|---|
 | `PDG2PDF_CONVERTER` | `wine_pdg2pic` | Backend: `wine_pdg2pic` or `echo` (self-test backend, no Wine needed). |
 | `PDG2PIC_EXE` | `/srv/vendor/Pdg2Pic.exe` | Path to the deployer-provided binary. |
-| `PDG2PDF_PASSWORD_LIST` | *(unset)* | Text file with one archive password per line, tried in order. |
+| `PDG2PDF_PASSWORD_LIST` | bundled `wordlists/archive-passwords.txt` | One archive password per line, tried in order when an archive is encrypted. |
 | `PDG2PDF_DATA_DIR` | `./data` | Uploads, job state, results. |
 | `PDG2PDF_MAX_UPLOAD_MB` | `2048` | Upload size limit. |
+
+## Bundled word list
+
+`wordlists/archive-passwords.txt` is a community-collected list of passwords
+historically used on e-book sharing archives (zip/rar/7z attachment
+passwords), gathered from public sources by the project maintainer. It is
+redistributed under this project's Apache-2.0 license. These passwords open
+**archive files only**; PDG files themselves are a separate matter (see
+below). To use your own list, set `PDG2PDF_PASSWORD_LIST`.
 
 ## Local development (no Wine required)
 
@@ -75,8 +83,8 @@ python3 -m unittest discover -s tests
 - This tool is for converting PDG files you are legally entitled to use, for
   personal reading. Encrypted/DRM-protected PDG is **out of scope** and will
   not be supported.
-- Archive password brute-forcing is limited to a user-supplied word list and
-  exists solely to open archives you own.
+- Archive password brute-forcing is limited to the bundled word list (or a
+  user-supplied one) and exists solely to open archives you own.
 
 ## Roadmap
 
