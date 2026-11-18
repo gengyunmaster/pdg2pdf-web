@@ -817,6 +817,12 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         Sleep(5000);
     }
 
+    /* the app writes "<source folder name>.pdf" into the user profile
+     * directory (observed behavior), so search there too */
+    WCHAR profile_dir[MAX_PATH] = {0};
+    if (FAILED(SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, profile_dir)))
+        profile_dir[0] = 0;
+
     /* wait for the PDF; handle popups */
     DWORD start = GetTickCount();
     WCHAR found[MAX_PATH] = {0};
@@ -833,7 +839,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             Sleep(300);
             if (is_err && !is_done) { kill_app(); return 6; }
         }
-        if (find_pdf(g_watch_dir, found, MAX_PATH)) {
+        int got = find_pdf(g_watch_dir, found, MAX_PATH);
+        if (!got && profile_dir[0])
+            got = find_pdf(profile_dir, found, MAX_PATH);
+        if (got) {
             long sz = file_size(found);
             if (sz >= 0 && sz == last_size) {
                 if (++stable >= 3) {
