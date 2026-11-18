@@ -64,5 +64,19 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     EnumWindows(top_all, 0);
     printf("--- children of main after click ---\n");
     EnumChildWindows(g_main, child_all, 0);
+    printf("--- other same-pid dialogs ---\n");
+    struct enum2 { DWORD pid; HWND main; };
+    (void)0;
+    /* dump children of every other #32770 owned by the app */
+    HWND top[64]; int n = 0;
+    for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h && n < 64;
+         h = FindWindowExW(NULL, h, L"#32770", NULL)) {
+        DWORD p = 0; GetWindowThreadProcessId(h, &p);
+        if (p == g_pid && h != g_main) top[n++] = h;
+    }
+    for (int i = 0; i < n; i++) {
+        dump_one(top[i]);
+        EnumChildWindows(top[i], child_all, 0);
+    }
     return 0;
 }
