@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include <commctrl.h>
 
 static DWORD g_pid = 0;
 static HWND g_main = NULL;
