@@ -17,6 +17,8 @@
 #include <string.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <objbase.h>
+#include <shlobj.h>
 
 #define SRC_EDIT_ID   1066   /* 0x42a  source folder edit                */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                     */
@@ -121,6 +123,144 @@ static BOOL CALLBACK dbg_dump(HWND hwnd, LPARAM lp) {
     fprintf(stderr, " title=");
     utf8_print(stderr, title);
     return TRUE;
+}
+
+
+/* ---- minimal OLE drag source (IDataObject + IDropSource) ------------- */
+typedef struct {
+    IDataObject iface;
+    LONG refs;
+    HGLOBAL hdrop;
+} DropObj;
+
+static HRESULT STDMETHODCALLTYPE do_QueryInterface(IUnknown *self, REFIID riid, void **pp) {
+    if (!pp) return E_POINTER;
+    *pp = NULL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDataObject)) {
+        *pp = self; self->lpVtbl->AddRef(self); return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE do_AddRef(IUnknown *self) {
+    DropObj *d = (DropObj *)self;
+    return InterlockedIncrement(&d->refs);
+}
+static ULONG STDMETHODCALLTYPE do_Release(IUnknown *self) {
+    DropObj *d = (DropObj *)self;
+    LONG r = InterlockedDecrement(&d->refs);
+    if (r == 0) { if (d->hdrop) GlobalFree(d->hdrop); free(d); }
+    return r;
+}
+static HRESULT STDMETHODCALLTYPE do_GetData(IDataObject *self, FORMATETC *fmt, STGMEDIUM *med) {
+    DropObj *d = (DropObj *)self;
+    if (!fmt || !med) return E_POINTER;
+    if (fmt->cfFormat != CF_HDROP || fmt->dwAspect != DVASPECT_CONTENT ||
+        fmt->tymed != TYMED_HGLOBAL) return DV_E_FORMATETC;
+    med->tymed = TYMED_HGLOBAL;
+    med->hGlobal = GlobalClone(d->hdrop);
+    med->pUnkForRelease = NULL;
+    if (!med->hGlobal) return E_OUTOFMEMORY;
+    return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE do_GetDataHere(IDataObject *self, FORMATETC *fmt, STGMEDIUM *med) {
+    (void)self; (void)fmt; (void)med; return DV_E_TYMED;
+}
+static HRESULT STDMETHODCALLTYPE do_QueryGetData(IDataObject *self, FORMATETC *fmt) {
+    (void)self;
+    if (!fmt) return E_POINTER;
+    if (fmt->cfFormat != CF_HDROP || fmt->dwAspect != DVASPECT_CONTENT ||
+        fmt->tymed != TYMED_HGLOBAL) return DV_E_FORMATETC;
+    return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE do_GetCanonicalFormatEtc(IDataObject *self, FORMATETC *in, FORMATETC *out) {
+    (void)self; (void)in; if (out) out->ptd = NULL; return E_NOTIMPL;
+}
+static HRESULT STDMETHODCALLTYPE do_SetData(IDataObject *self, FORMATETC *fmt, STGMEDIUM *med, BOOL release) {
+    (void)self; (void)fmt; (void)med; (void)release; return E_NOTIMPL;
+}
+static HRESULT STDMETHODCALLTYPE do_EnumFormatEtc(IDataObject *self, DWORD dir, IEnumFORMATETC **pp) {
+    (void)self; (void)dir;
+    if (!pp) return E_POINTER;
+    *pp = NULL;
+    return E_NOTIMPL;
+}
+static HRESULT STDMETHODCALLTYPE do_DAdvise(IDataObject *self, FORMATETC *fmt, DWORD advf, IAdviseSink *sink, DWORD *conn) {
+    (void)self; (void)fmt; (void)advf; (void)sink; (void)conn; return OLE_E_ADVISENOTSUPPORTED;
+}
+static HRESULT STDMETHODCALLTYPE do_DUnadvise(IDataObject *self, DWORD conn) {
+    (void)self; (void)conn; return OLE_E_ADVISENOTSUPPORTED;
+}
+static HRESULT STDMETHODCALLTYPE do_EnumDAdvise(IDataObject *self, IEnumSTATDATA **pp) {
+    (void)self; (void)pp; return OLE_E_ADVISENOTSUPPORTED;
+}
+static IDataObjectVtbl do_vtbl = {
+    do_QueryInterface, do_AddRef, do_Release,
+    do_GetData, do_GetDataHere, do_QueryGetData,
+    do_GetCanonicalFormatEtc, do_SetData, do_EnumFormatEtc,
+    do_DAdvise, do_DUnadvise, do_EnumDAdvise
+};
+
+typedef struct { IDropSource iface; LONG refs; } DropSrc;
+static ULONG STDMETHODCALLTYPE ds_AddRef(IUnknown *self) {
+    DropSrc *d = (DropSrc *)self; return InterlockedIncrement(&d->refs);
+}
+static HRESULT STDMETHODCALLTYPE ds_QueryInterface(IUnknown *self, REFIID riid, void **pp) {
+    if (!pp) return E_POINTER;
+    *pp = NULL;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDropSource)) {
+        *pp = self; self->lpVtbl->AddRef(self); return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE ds_Release(IUnknown *self) {
+    DropSrc *d = (DropSrc *)self; LONG r = InterlockedDecrement(&d->refs);
+    if (r == 0) free(d); return r;
+}
+static HRESULT STDMETHODCALLTYPE ds_QueryContinueDrag(IDropSource *self, BOOL escape, DWORD keys) {
+    (void)self; (void)escape; (void)keys;
+    return DRAGDROP_S_DROP;   /* drop immediately at the current position */
+}
+static HRESULT STDMETHODCALLTYPE ds_GiveFeedback(IDropSource *self, DWORD effect) {
+    (void)self; (void)effect; return DRAGDROP_S_DEFAULT;
+}
+static IDropSourceVtbl ds_vtbl = {
+    ds_QueryInterface, ds_AddRef, ds_Release,
+    ds_QueryContinueDrag, ds_GiveFeedback
+};
+
+/* Build an HDROP holding one wide path. */
+static HGLOBAL make_hdrop(const WCHAR *dir) {
+    size_t len = wcslen(dir) + 1;
+    typedef struct { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; } DF;
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, sizeof(DF) + (len + 1) * sizeof(WCHAR));
+    if (!h) return NULL;
+    DF *df = (DF *)GlobalLock(h);
+    df->pFiles = sizeof(DF); df->pt.x = df->pt.y = 0;
+    df->fNC = FALSE; df->fWide = TRUE;
+    memcpy((char *)df + sizeof(DF), dir, len * sizeof(WCHAR));
+    ((WCHAR *)((char *)df + sizeof(DF)))[len] = 0;
+    GlobalUnlock(h);
+    return h;
+}
+
+/* Perform an OLE drop of `dir` at (x,y) in screen coordinates. */
+static int ole_drop_at(const WCHAR *dir, int x, int y) {
+    DropObj *obj = (DropObj *)calloc(1, sizeof(DropObj));
+    DropSrc *src = (DropSrc *)calloc(1, sizeof(DropSrc));
+    if (!obj || !src) { free(obj); free(src); return 0; }
+    obj->iface.lpVtbl = &do_vtbl;
+    obj->refs = 1;
+    obj->hdrop = make_hdrop(dir);
+    src->iface.lpVtbl = &ds_vtbl;
+    src->refs = 1;
+    SetCursorPos(x, y);
+    Sleep(200);
+    DWORD effect = 0;
+    HRESULT hr = DoDragDrop((IDataObject *)obj, (IDropSource *)src,
+                            DROPEFFECT_COPY, &effect);
+    IDataObject_Release((IDataObject *)obj);
+    IDropSource_Release((IDropSource *)src);
+    return SUCCEEDED(hr);
 }
 
 /* Wine exposes the container filesystem under drive Z:. Convert a Unix
@@ -242,6 +382,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         CloseHandle(f);
     }
 
+    if (FAILED(CoInitialize(NULL))) {
+        fprintf(stderr, "pdgdrive: CoInitialize failed\n");
+        return 2;
+    }
+
     /* pre-seed the ini next to the app */
     {
         WCHAR ini[MAX_PATH] = {0}, dir[MAX_PATH] = {0};
@@ -284,25 +429,36 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* sanity + dual-edit seeding: fill both edits and fire notifications */
+    /* feed the source folder through a real OLE drag-and-drop */
     Sleep(1500);
-    const UINT edits[2] = { 1066 /* 0x42a */, 1064 /* 0x428 */ };
-    for (int e = 0; e < 2; e++) {
-        SetDlgItemTextW(g_main, edits[e], src_win);
-        HWND he = GetDlgItem(g_main, edits[e]);
-        SendMessageW(g_main, WM_COMMAND,
-                     MAKEWPARAM(edits[e], EN_CHANGE), (LPARAM)he);
-        SendMessageW(g_main, WM_COMMAND,
-                     MAKEWPARAM(edits[e], EN_KILLFOCUS), (LPARAM)he);
-    }
-    Sleep(800);
-    for (int e = 0; e < 2; e++) {
-        WCHAR cur[512] = {0};
-        GetDlgItemTextW(g_main, edits[e], cur, 511);
-        fprintf(stderr, "pdgdrive: edit %u: ", edits[e]); utf8_print(stderr, cur);
-    }
+    HWND list = GetDlgItem(g_main, FILE_LIST_ID);
+    int dropped = 0;
     {
-        HWND list = GetDlgItem(g_main, FILE_LIST_ID);
+        /* drop positions: list center, then main window center */
+        POINT pts[2]; int np = 0;
+        RECT rc; 
+        if (list && GetWindowRect(list, &rc)) {
+            pts[np].x = (rc.left + rc.right) / 2;
+            pts[np].y = (rc.top + rc.bottom) / 2; np++;
+        }
+        if (GetWindowRect(g_main, &rc)) {
+            pts[np].x = (rc.left + rc.right) / 2;
+            pts[np].y = (rc.top + rc.bottom) / 2; np++;
+        }
+        for (int i = 0; i < np && !dropped; i++) {
+            if (ole_drop_at(src_win, pts[i].x, pts[i].y)) {
+                fprintf(stderr, "pdgdrive: ole drop at %d,%d ok\n",
+                        pts[i].x, pts[i].y);
+                dropped = 1;
+            }
+        }
+    }
+    if (!dropped) { fprintf(stderr, "pdgdrive: ole drop failed\n"); kill_app(); return 3; }
+    Sleep(2000);
+    {
+        WCHAR cur[512] = {0};
+        GetDlgItemTextW(g_main, SRC_EDIT_ID, cur, 511);
+        fprintf(stderr, "pdgdrive: source edit: "); utf8_print(stderr, cur);
         fprintf(stderr, "pdgdrive: list items=%ld\n",
                 list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1);
     }
