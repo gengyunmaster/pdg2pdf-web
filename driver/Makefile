@@ -5,7 +5,7 @@ CC = i686-w64-mingw32-gcc
 all: pdgdrive.exe windowdump.exe clickdump.exe
 
 pdgdrive.exe: pdgdrive.c
-	$(CC) -O2 -mwindows -Wall pdgdrive.c -o pdgdrive.exe
+	$(CC) -O2 -mwindows -Wall pdgdrive.c -o pdgdrive.exe -lole32 -luuid
 
 windowdump.exe: windowdump.c
 	$(CC) -O2 -mwindows -Wall windowdump.c -o windowdump.exe
