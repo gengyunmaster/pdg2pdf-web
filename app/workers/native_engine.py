@@ -11,6 +11,11 @@ class NativeEngineConverter:
     name = "native"
 
     async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
+        import sys  # noqa: PLC0415
+
+        root = str(Path(__file__).resolve().parents[2])
+        if root not in sys.path:
+            sys.path.insert(0, root)
         from engine.convert import (  # noqa: PLC0415
             UnsupportedPayload, convert_book,
         )
