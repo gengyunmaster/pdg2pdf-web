@@ -543,6 +543,8 @@ static int write_ini(const WCHAR *ini_path, const WCHAR *src_win,
     fwprintf(f, L"PARA_DIR_TGT=%s\r\n", pdf_win);
     fwprintf(f, L"PARA_TGT_TYPE=1\r\n");   /* 1 = PDF file target */
     fwprintf(f, L"PARA_TGT_AS_SRC=0\r\n");
+    fwprintf(f, L"PARA_AUTO_CHK=0\r\n");   /* no auto statistics dialog */
+    fwprintf(f, L"PARA_PREVIEW=0\r\n");    /* no preview decode */
     fclose(f);
     return 1;
 }
@@ -801,6 +803,28 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         if (en) {
             SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
             break;
+        }
+        /* auto-dismiss any app dialog (statistics report, errors, ...) */
+        {
+            for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h;
+                 h = FindWindowExW(NULL, h, L"#32770", NULL)) {
+                DWORD p = 0; GetWindowThreadProcessId(h, &p);
+                if (p != g_app_pid || h == g_main) continue;
+                WCHAR t[128] = {0};
+                GetWindowTextW(h, t, 127);
+                fprintf(stderr, "pdgdrive: dialog %lx title=", (unsigned long)h);
+                utf8_print(stderr, t);
+                HWND okb = find_ctrl(h, 1);
+                if (!okb) okb = find_ctrl(h, 2);   /* try cancel too */
+                if (okb) {
+                    fprintf(stderr, "pdgdrive: clicking its button %d\n",
+                            GetDlgCtrlID(okb));
+                    SendMessageTimeoutW(okb, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG,
+                                        5000, NULL);
+                } else {
+                    SendMessageW(h, WM_CLOSE, 0, 0);
+                }
+            }
         }
         if (a == 2) {
             fprintf(stderr, "pdgdrive: force-enabling main and start\n");
