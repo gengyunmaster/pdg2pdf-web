@@ -480,6 +480,16 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         fprintf(stderr, "pdgdrive: OpenProcess failed %lu\n", GetLastError());
         kill_app(); return 3;
     }
+    {
+        HTREEITEM ri = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+        while (ri) {
+            WCHAR t[256] = {0};
+            if (remote_item_text(tree, ri, t, 256)) {
+                fprintf(stderr, "pdgdrive: root item: "); utf8_print(stderr, t);
+            }
+            ri = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)ri);
+        }
+    }
     int picked = tree ? pick_path_in_tree(tree, src_win) : 0;
     fprintf(stderr, "pdgdrive: tree pick=%d ok_enabled=%d\n",
             picked, ok0 ? IsWindowEnabled(ok0) : -1);
