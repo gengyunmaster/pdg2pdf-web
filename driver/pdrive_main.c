@@ -588,6 +588,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     WCHAR *cl = GetCommandLineW();
     WCHAR src[MAX_PATH] = {0}, pdf[MAX_PATH] = {0}, app[MAX_PATH] = {0};
     WCHAR desk_name[MAX_PATH] = {0};
+    WCHAR home_arg[MAX_PATH] = {0};
     int seed_ini = 1;
     int timeout_sec = 1800;
 
@@ -606,6 +607,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 wcsncpy(desk_name, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--noini"))
                 seed_ini = 0;
+            else if (!wcscmp(argv[i], L"--home") && i + 1 < argc)
+                wcsncpy(home_arg, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--timeout") && i + 1 < argc)
                 timeout_sec = _wtoi(argv[++i]);
         }
@@ -823,14 +826,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (FAILED(SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, profile_dir)))
         profile_dir[0] = 0;
     WCHAR home_win[MAX_PATH] = {0};
-    {
-        char home_a[MAX_PATH] = {0};
-        DWORD hl = GetEnvironmentVariableA("HOME", home_a, MAX_PATH - 1);
-        if (hl > 0 && hl < MAX_PATH) {
-            WCHAR home_u[MAX_PATH] = {0};
-            MultiByteToWideChar(CP_UTF8, 0, home_a, -1, home_u, MAX_PATH - 1);
-            unix_to_win(home_u, home_win, MAX_PATH);
-        }
+    if (home_arg[0]) {
+        WCHAR home_u[MAX_PATH] = {0};
+        wcsncpy(home_u, home_arg, MAX_PATH - 1);
+        unix_to_win(home_u, home_win, MAX_PATH);
     }
     fprintf(stderr, "pdgdrive: watch=%ls profile=%ls home=%ls\n",
             g_watch_dir, profile_dir, home_win);
