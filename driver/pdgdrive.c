@@ -782,21 +782,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         UINT sel = list ? (UINT)SendMessageW(list, LVM_GETSELECTEDCOUNT, 0, 0) : 0;
         fprintf(stderr, "pdgdrive: start attempt %d enabled=%d items=%ld sel=%u\n",
                 a, en, items, sel);
-        if (a == 0 && list && items > 0) {
-            for (int i = 0; i < items && i < 8; i++) {
-                UINT st = (UINT)SendMessageW(list, LVM_GETITEMSTATE, i,
-                                             LVIS_STATEIMAGEMASK);
-                fprintf(stderr, "pdgdrive: item %d state-image=%u\n",
-                        i, (st >> 12) & 0xf);
-                /* state image 1=unchecked, 2=checked: force-check */
-                SendMessageW(list, LVM_SETITEMSTATE, i,
-                             MAKELPARAM(LVIS_STATEIMAGEMASK,
-                                        INDEXTOSTATEIMAGEMASK(2)));
-            }
-            /* deselect all, then re-enable polling */
-            SendMessageW(list, LVM_SETITEMSTATE, (WPARAM)-1,
-                         MAKELPARAM(LVIS_SELECTED, 0));
-        }
+
         if (en) {
             SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
             break;
