@@ -57,10 +57,13 @@ class WinePdg2PicConverter:
         stage.mkdir(parents=True, exist_ok=True)
         exe = stage / "Pdg2Pic.exe"
         shutil.copyfile(PDG2PIC_EXE, exe)
+        # the driver launches Pdg2Pic.exe from its own directory
+        driver = stage / "pdgdrive.exe"
+        shutil.copyfile(DRIVER, driver)
 
         env = dict(os.environ)
         env.setdefault("WINEDEBUG", "-1")
-        cmd = ["wine", str(DRIVER), "--src", str(src), "--watch", str(src),
+        cmd = ["wine", str(driver), "--src", str(src), "--watch", str(src),
                "--timeout", str(TIMEOUT)]
 
         proc = await asyncio.create_subprocess_exec(

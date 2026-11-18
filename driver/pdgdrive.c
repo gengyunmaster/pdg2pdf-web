@@ -3,13 +3,15 @@
 // Runs next to Pdg2Pic.exe under the same Wine prefix. Automates the main
 // dialog with Win32 messages only — no coordinates, no keystrokes:
 //
-//   1. Find the main dialog (class #32770, title "Pdg2Pic").
-//   2. Set the source-folder edit control (ID 1066 / 0x42a) with
+//   1. Launch Pdg2Pic.exe from the driver's own directory (hidden window —
+//      a headless run needs no rendering), unless --app says otherwise.
+//   2. Find the main dialog (class #32770, title "Pdg2Pic").
+//   3. Set the source-folder edit control (ID 1066 / 0x42a) with
 //      SetDlgItemTextW and let the app's EN_CHANGE handler scan the folder.
-//   3. Confirm the file list (SysListView32, ID 1006 / 0x3ee) got items.
-//   4. Click the start-conversion button (ID 1 = IDOK, "&4 ..." per the
+//   4. Confirm the file list (SysListView32, ID 1006 / 0x3ee) got items.
+//   5. Click the start-conversion button (ID 1 = IDOK, "&4 ..." per the
 //      on-screen 1/2/3/4 step buttons and the documented shortcut key "4").
-//   5. Watch for the output PDF (stable size) and for modal popups owned by
+//   6. Watch for the output PDF (stable size) and for modal popups owned by
 //      the app; read popup text, classify, close them.
 //
 // Control IDs were confirmed live with windowdump.exe under Wine
@@ -35,11 +37,39 @@ static const WCHAR TXT_ERR4[] = {0x6ca1,0x6709,0};      /* 没有 */
 
 static DWORD g_app_pid = 0;
 static HWND  g_main = NULL;
+static PROCESS_INFORMATION g_pi = {0};
+
+static void kill_app(void) {
+    if (g_pi.hProcess) {
+        TerminateProcess(g_pi.hProcess, 0);
+        WaitForSingleObject(g_pi.hProcess, 3000);
+        CloseHandle(g_pi.hProcess);
+        CloseHandle(g_pi.hThread);
+        g_pi.hProcess = NULL;
+    }
+}
 
 struct popup_info {
     HWND hwnd;
     WCHAR text[1024];
 };
+
+
+static void utf8_print(FILE *f, const WCHAR *w) {
+    if (w && w[0]) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+        if (n > 0) {
+            char *buf = (char *)malloc((size_t)n);
+            if (buf) {
+                WideCharToMultiByte(CP_UTF8, 0, w, -1, buf, n, NULL, NULL);
+                fputs(buf, f);
+                free(buf);
+                return;
+            }
+        }
+    }
+    fputs("\n", f);
+}
 
 static void dump_popup_text(HWND popup, WCHAR *buf, size_t cap) {
     size_t used = 0;
@@ -128,10 +158,10 @@ static int contains_any(const WCHAR *hay, const WCHAR *const *needles, int n) {
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)cmdline; (void)show;
     WCHAR *cl = GetCommandLineW();
-    WCHAR src[MAX_PATH] = {0}, watch[MAX_PATH] = {0};
+    WCHAR src[MAX_PATH] = {0}, watch[MAX_PATH] = {0}, app[MAX_PATH] = {0};
     int timeout_sec = 1800;
 
-    /* minimal arg parse: --src <dir> --watch <dir> [--timeout N] */
+    /* arg parse: --src <dir> --watch <dir> [--timeout N] [--app exe] */
     {
         int argc = 0;
         LPWSTR *argv = CommandLineToArgvW(cl, &argc);
@@ -141,6 +171,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 wcsncpy(src, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--watch") && i + 1 < argc)
                 wcsncpy(watch, argv[++i], MAX_PATH - 1);
+            else if (!wcscmp(argv[i], L"--app") && i + 1 < argc)
+                wcsncpy(app, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--timeout") && i + 1 < argc)
                 timeout_sec = _wtoi(argv[++i]);
         }
@@ -148,8 +180,44 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     if (!src[0] || !watch[0]) {
         fprintf(stderr, "usage: pdgdrive.exe --src <dir> --watch <dir> "
-                        "[--timeout <sec>]\n");
+                        "[--timeout <sec>] [--app Pdg2Pic.exe]\n");
         return 2;
+    }
+
+    /* 0. launch Pdg2Pic.exe (hidden) from the driver's own directory */
+    if (!app[0]) {
+        WCHAR dir[MAX_PATH] = {0};
+        GetModuleFileNameW(NULL, dir, MAX_PATH - 1);
+        WCHAR *bs = wcsrchr(dir, L'\\');
+        if (bs) *bs = 0;
+        _snwprintf(app, MAX_PATH - 1, L"%s\\Pdg2Pic.exe", dir);
+    }
+    {
+        WCHAR probe[MAX_PATH] = {0};
+        if (GetFullPathNameW(app, MAX_PATH, probe, NULL) == 0) {
+            fprintf(stderr, "pdgdrive: cannot resolve app path\n");
+            return 2;
+        }
+        HANDLE f = CreateFileW(probe, GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, 0, NULL);
+        if (f == INVALID_HANDLE_VALUE) {
+            fprintf(stderr, "pdgdrive: app not found: "); utf8_print(stderr, probe); fprintf(stderr, "\n");
+            return 2;
+        }
+        CloseHandle(f);
+
+        STARTUPINFOW si = {0};
+        si.cb = sizeof(si);
+        si.wShowWindow = SW_HIDE;
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        WCHAR cmdbuf[MAX_PATH + 8] = {0};
+        _snwprintf(cmdbuf, MAX_PATH + 7, L"\"%s\"", probe);
+        if (!CreateProcessW(probe, cmdbuf, NULL, NULL, FALSE, 0, NULL, NULL,
+                            &si, &g_pi)) {
+            fprintf(stderr, "pdgdrive: CreateProcess failed %lu\n",
+                    GetLastError());
+            return 2;
+        }
     }
 
     /* 1. locate the main window (retry: the app may still be starting) */
@@ -157,25 +225,25 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         EnumWindows(main_enum, 0);
         if (!g_main) Sleep(500);
     }
-    if (!g_main) { fprintf(stderr, "pdgdrive: main window not found\n"); return 3; }
-    fwprintf(stderr, L"pdgdrive: main window %lx\n", (unsigned long)g_main);
+    if (!g_main) { fprintf(stderr, "pdgdrive: main window not found\n"); kill_app(); return 3; }
+    fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
     /* 2. set the source folder; EN_CHANGE fires the app's scan handler */
     if (!SetDlgItemTextW(g_main, SRC_EDIT_ID, src)) {
         fprintf(stderr, "pdgdrive: SetDlgItemText(1066) failed %lu\n",
                 GetLastError());
-        return 3;
+        kill_app(); return 3;
     }
     Sleep(1500); /* allow the scan to populate the list */
 
     /* 3. confirm the list got items (LVM_GETITEMCOUNT) */
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
     int items = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
-    fwprintf(stderr, L"pdgdrive: file list items=%d\n", items);
+    fprintf(stderr, "pdgdrive: file list items=%d\n", items);
 
     /* 4. start conversion (ID 1 = the on-screen "4" step button) */
     HWND btn = GetDlgItem(g_main, START_BTN_ID);
-    if (!btn) { fprintf(stderr, "pdgdrive: start button missing\n"); return 3; }
+    if (!btn) { fprintf(stderr, "pdgdrive: start button missing\n"); kill_app(); return 3; }
     SendMessageW(btn, BM_CLICK, 0, 0);
 
     /* 5. wait for the PDF; handle popups */
@@ -189,20 +257,21 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             int is_done = wcsstr(pi.text, TXT_OK_DONE) != NULL;
             int is_err = contains_any(pi.text,
                 (const WCHAR *const[]){TXT_ERR1, TXT_ERR2, TXT_ERR3, TXT_ERR4}, 4);
-            fwprintf(stderr, L"pdgdrive: popup: %s\n", pi.text);
+            fprintf(stderr, "pdgdrive: popup: "); utf8_print(stderr, pi.text); fprintf(stderr, "\n");
             /* completion prompts and error boxes both get closed */
             SendMessageW(pi.hwnd, WM_CLOSE, 0, 0);
             Sleep(300);
             if (is_err && !is_done) {
                 fprintf(stderr, "pdgdrive: fatal popup, aborting\n");
-                return 6;
+                kill_app(); return 6;
             }
         }
         if (find_pdf(watch, pdf, MAX_PATH)) {
             long sz = file_size(pdf);
             if (sz >= 0 && sz == last_size) {
                 if (++stable >= 3) {
-                    fwprintf(stdout, L"PDF=%s\n", pdf);
+                    fprintf(stdout, "PDF="); utf8_print(stdout, pdf);
+                    kill_app();
                     return 0;
                 }
             } else {
@@ -212,5 +281,5 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         Sleep(1000);
     }
     fprintf(stderr, "pdgdrive: timeout\n");
-    return 5;
+    kill_app(); return 5;
 }
