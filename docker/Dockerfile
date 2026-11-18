@@ -31,6 +31,7 @@ RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 # Application + driver build + bundled archive-password word list
 COPY app ./app
 COPY driver ./driver
+COPY engine ./engine
 COPY wordlists ./wordlists
 RUN echo "rebuilding drivers" && make -C driver \
  && rm -rf driver/*.o
