@@ -109,7 +109,7 @@ class WinePdg2PicConverter:
             raise RuntimeError(
                 f"pdgdrive failed (rc={proc.returncode}): {tail_txt}"
             )
-        pdf = Path(pdf_line[4:])
+        pdf = wine_path_to_unix(pdf_line[4:])
         if not pdf.exists():
             raise RuntimeError(f"pdgdrive reported missing file: {pdf}")
         result = out_dir / "result.pdf"
@@ -125,6 +125,19 @@ class WinePdg2PicConverter:
 
 def env_wineprefix() -> str:
     return os.environ.get("WINEPREFIX", str(Path.home() / ".wine"))
+
+
+
+
+def wine_path_to_unix(p: str) -> Path:
+    """Convert a Windows path returned by the driver to a host path."""
+    if len(p) >= 3 and p[1] == ":" and p[2] == "\\":
+        drive, rest = p[0].lower(), p[3:]
+        rel = Path(rest.replace("\\", "/"))
+        if drive == "z":
+            return Path("/") / rel
+        return Path(env_wineprefix()) / f"drive_{drive}" / rel
+    return Path(p)
 
 
 def subprocess_wineserver_kill(env: dict) -> None:
