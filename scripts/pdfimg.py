@@ -47,20 +47,18 @@ def extract_images(pdf: bytes) -> list[ImageStream]:
         if dict_start < 0:
             pos = m.end()
             continue
-        dict_end = pdf.find(b">>", dict_start, dict_start + 8192)
-        if dict_end < 0:
+        # locate this object's own stream first (the dict may contain
+        # nested << >> from DecodeParms, so '>>' alone cannot bound it)
+        stream_pos = pdf.find(b"stream", dict_start, dict_start + 8192)
+        if stream_pos < 0:
             pos = m.end()
             continue
-        d = pdf[dict_start:dict_end]
+        d = pdf[dict_start:stream_pos]
         if b"/Subtype /Image" not in d:
             endobj = pdf.find(b"endobj", m.end())
             if endobj < 0:
                 break
             pos = endobj + 6
-            continue
-        stream_pos = pdf.find(b"stream", dict_end, dict_end + 16)
-        if stream_pos < 0:
-            pos = dict_end + 2
             continue
         data_start = stream_pos + 6
         if pdf[data_start:data_start + 2] == b"\r\n":
