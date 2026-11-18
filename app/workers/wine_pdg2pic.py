@@ -79,7 +79,7 @@ class WinePdg2PicConverter:
         finally:
             subprocess_wineserver_kill(env)
 
-        text = out.decode("utf-16-le", "replace") if out else ""
+        text = out.decode("utf-8", "replace") if out else ""
         pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
         if proc.returncode != 0 or not pdf_line:
             tail = "\n".join(text.splitlines()[-10:])
