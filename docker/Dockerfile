@@ -16,7 +16,7 @@ RUN dpkg --add-architecture i386 \
         /etc/apt/sources.list.d/debian.sources \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-        wine wine32 xvfb p7zip-full p7zip-rar \
+        wine wine32 xvfb xauth p7zip-full p7zip-rar \
         python3 python3-pip \
         gcc-mingw-w64-i686 make \
         ca-certificates curl \
