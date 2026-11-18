@@ -114,7 +114,13 @@ class WinePdg2PicConverter:
             )
         pdf = wine_path_to_unix(pdf_line[4:])
         if not pdf.exists():
-            raise RuntimeError(f"pdgdrive reported missing file: {pdf}")
+            import subprocess as _sp
+            found = _sp.run(["find", "/", "-name", "*.pdf", "-not", "-path",
+                             "/proc/*", "-not", "-path", "/sys/*"],
+                            capture_output=True, text=True, timeout=30).stdout
+            raise RuntimeError(
+                f"pdgdrive reported missing file: {pdf}; "
+                f"actual PDFs on disk: {found.strip()[:400] or 'none'}")
         result = out_dir / "result.pdf"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(pdf, result)
