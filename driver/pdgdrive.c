@@ -759,6 +759,12 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     if (!btn) { fprintf(stderr, "pdgdrive: start button missing\n"); kill_app(); return 3; }
     for (int a = 0; a < 15; a++) {
         int en = IsWindowEnabled(btn);
+        static int logged_main_en = 0;
+        if (!logged_main_en) {
+            logged_main_en = 1;
+            fprintf(stderr, "pdgdrive: main enabled=%d\n",
+                    IsWindowEnabled(g_main));
+        }
         long items = list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1;
         UINT sel = list ? (UINT)SendMessageW(list, LVM_GETSELECTEDCOUNT, 0, 0) : 0;
         fprintf(stderr, "pdgdrive: start attempt %d enabled=%d items=%ld sel=%u\n",
