@@ -15,13 +15,17 @@ class NativeEngineConverter:
             UnsupportedPayload, convert_book,
         )
 
+        from engine.convert import book_supported  # noqa: PLC0415
+        from ..workers_support import FallbackToWine  # noqa: PLC0415
+
         book = book_root_or_raise(extracted)
+        if not book_supported(book):
+            print("[worker] native: unsupported pages, falling back to wine",
+                  flush=True)
+            raise FallbackToWine(book)
         result = out_dir / "book.pdf"
         try:
             convert_book(book, result)
         except UnsupportedPayload as exc:
-            raise RuntimeError(
-                f"native engine cannot handle {exc.path.name} "
-                f"(payload={exc.kind}); use the wine backend"
-            ) from exc
+            raise FallbackToWine(book) from exc
         return result

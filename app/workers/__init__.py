@@ -9,8 +9,21 @@ from .echo import EchoConverter
 from .native_engine import NativeEngineConverter
 from .wine_pdg2pic import WinePdg2PicConverter
 
+class AutoConverter:
+    """Native engine first; books it cannot handle go to the Wine wrapper."""
+    name = "auto"
+
+    async def convert(self, extracted, out_dir):
+        from ..workers_support import FallbackToWine  # noqa: PLC0415
+        try:
+            return await NativeEngineConverter().convert(extracted, out_dir)
+        except FallbackToWine:
+            return await WinePdg2PicConverter().convert(extracted, out_dir)
+
+
 _BACKENDS = {c.name: c for c in (
     EchoConverter, WinePdg2PicConverter, NativeEngineConverter,
+    AutoConverter,
 )}
 
 
