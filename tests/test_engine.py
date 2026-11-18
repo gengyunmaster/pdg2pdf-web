@@ -61,6 +61,31 @@ class PngDecodeTest(unittest.TestCase):
         self.assertEqual(raw[0], 128)
 
 
+def make_pal_png(w=8, h=2, bitdepth=1):
+    def chunk(t, d):
+        c = struct.pack(">I", len(d)) + t + d
+        return c + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    ihdr = struct.pack(">IIBBBBB", w, h, bitdepth, 3, 0, 0, 0)
+    plte = bytes((0, 0, 0, 255, 255, 255))  # 0=black, 1=white
+    per_row = (w * bitdepth + 7) // 8
+    raw = b"".join(b"\x00" + b"\xAA" * per_row for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"PLTE", plte) + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b""))
+
+
+class PalettePngTest(unittest.TestCase):
+    def test_palette1(self):
+        from engine.imgdec import png_decode
+        w, h, dpi, cs, raw = png_decode(make_pal_png())
+        self.assertEqual((w, h), (8, 2))
+        self.assertEqual(cs, "/DeviceRGB")
+        self.assertEqual(len(raw), 8 * 2 * 3)
+        # 0xAA = 10101010 -> white,black,... starting white
+        self.assertEqual(raw[0:3], b"\xff\xff\xff")
+        self.assertEqual(raw[3:6], b"\x00\x00\x00")
+
+
 class PdfWriteTest(unittest.TestCase):
     def test_pdf_pages(self):
         pages = [Page(8, 4, 150, "/DeviceGray", 8, b"abcd", "/FlateDecode"),
