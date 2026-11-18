@@ -764,6 +764,20 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             logged_main_en = 1;
             fprintf(stderr, "pdgdrive: main enabled=%d\n",
                     IsWindowEnabled(g_main));
+            /* what else does the app have open? */
+            for (HWND h = FindWindowExW(NULL, NULL, NULL, NULL); h;
+                 h = FindWindowExW(NULL, h, NULL, NULL)) {
+                DWORD p = 0; GetWindowThreadProcessId(h, &p);
+                if (p != g_app_pid || h == g_main) continue;
+                WCHAR cls[64] = {0}, t[256] = {0};
+                GetClassNameW(h, cls, 63);
+                GetWindowTextW(h, t, 255);
+                fprintf(stderr, "pdgdrive: app window %lx vis=%d cls=",
+                        (unsigned long)h, IsWindowVisible(h));
+                utf8_print(stderr, cls);
+                fprintf(stderr, "  title=");
+                utf8_print(stderr, t);
+            }
         }
         long items = list ? (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0) : -1;
         UINT sel = list ? (UINT)SendMessageW(list, LVM_GETSELECTEDCOUNT, 0, 0) : 0;
