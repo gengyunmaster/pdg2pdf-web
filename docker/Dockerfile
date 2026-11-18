@@ -37,8 +37,7 @@ RUN make -C driver \
 # BYOB: uncomment the next line after placing Pdg2Pic.exe in vendor/.
 # COPY vendor/Pdg2Pic.exe /srv/vendor/Pdg2Pic.exe
 RUN mkdir -p /srv/vendor \
- && Xvfb :99 -screen 0 1024x768x16 & \
-    WINEPREFIX=/srv/.wine DISPLAY=:99 wine wineboot --init \
+ && WINEPREFIX=/srv/.wine xvfb-run -a wine wineboot --init \
  && wineserver -w || true
 
 COPY docker/entrypoint.sh /entrypoint.sh
