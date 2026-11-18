@@ -277,7 +277,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     HWND browse = GetDlgItem(g_main, SRC_BROWSE_ID);
     if (!browse) { fprintf(stderr, "pdgdrive: browse button missing\n"); kill_app(); return 3; }
     fprintf(stderr, "pdgdrive: browse hwnd=%lx\n", (unsigned long)browse);
-    PostMessageW(browse, BM_CLICK, 0, 0);
+    SendMessageTimeoutW(browse, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
 
     /* wait for the picker: a #32770 owned by the app, not the main window,
      * actually containing the folder-name edit (control 3745) */
@@ -288,8 +288,13 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
              h = FindWindowExW(NULL, h, L"#32770", NULL)) {
             DWORD p = 0; GetWindowThreadProcessId(h, &p);
             if (p != g_app_pid || h == g_main) continue;
-            HWND e = find_ctrl(h, PICKER_EDIT_ID);
-            if (e) { picker = h; ped = e; break; }
+            if (!IsWindowVisible(h)) continue;   /* skip childless shadows */
+            WCHAR t[128] = {0};
+            GetWindowTextW(h, t, 127);
+            if (!wcsstr(t, L"Pdg2Pic")) {
+                HWND e = find_ctrl(h, PICKER_EDIT_ID);
+                if (e) { picker = h; ped = e; break; }
+            }
         }
     }
     if (!picker) {
