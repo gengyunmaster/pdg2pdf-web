@@ -103,10 +103,10 @@ class _Bits:
     def put(self, code: int, length: int) -> None:
         self.acc = (self.acc << length) | code
         self.n += length
-        if self.n >= 8:
+        while self.n >= 8:
             self.n -= 8
             self.buf.append((self.acc >> self.n) & 0xFF)
-            self.acc &= (1 << self.n) - 1
+        self.acc &= (1 << self.n) - 1
 
     def align(self) -> None:
         if self.n:
