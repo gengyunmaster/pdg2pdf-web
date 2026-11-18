@@ -21,11 +21,12 @@ class UnsupportedImage(ValueError):
     pass
 
 
-def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
-    """Return (width, height, dpi, colorspace, raw_samples).
+def png_decode(data: bytes, packed_1bit: bool = True):
+    """Return (width, height, dpi, colorspace, bits, samples).
 
-    colorspace is "/DeviceGray" or "/DeviceRGB"; raw samples have no
-    row filters and RGBA is composited onto white.
+    colorspace is "/DeviceGray" or "/DeviceRGB". 1-bit grayscale may be
+    returned packed (bits=1, one pixel per bit, MSB first, 0=black) or
+    expanded to 8-bit samples.
     """
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise UnsupportedImage("not a PNG")
@@ -33,18 +34,21 @@ def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
     width = height = bitdepth = colortype = None
     idat = bytearray()
     dpi = DEFAULT_DPI
+    palette = None
     while pos + 8 <= len(data):
         (length,) = struct.unpack_from(">I", data, pos)
         ctype = data[pos + 4:pos + 8]
         body = data[pos + 8:pos + 8 + length]
         if ctype == b"IHDR":
-            width, height, bitdepth, colortype, comp, filt, inter = \
+            width, height, bitdepth, colortype, _c, _f, inter = \
                 struct.unpack(">IIBBBBB", body)
             if bitdepth not in (1, 2, 4, 8) or inter != 0:
                 raise UnsupportedImage(
                     f"png bitdepth={bitdepth} interlace={inter}")
+        elif ctype == b"PLTE":
+            palette = [bytes(body[i:i + 3]) for i in range(0, len(body), 3)]
         elif ctype == b"pHYs" and len(body) == 9:
-            ppm_x, ppm_y, unit = struct.unpack(">IIB", body)
+            ppm_x, _ppm_y, unit = struct.unpack(">IIB", body)
             if unit == 1 and ppm_x > 0:
                 dpi = sane_dpi(round(ppm_x * 0.0254))
         elif ctype == b"IDAT":
@@ -54,88 +58,51 @@ def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
         pos += 12 + length
     if width is None:
         raise UnsupportedImage("png missing IHDR")
-
-    palette = None
-    channels = 1
-    bpp = 1  # per spec: ceil(bitdepth*channels/8), min 1
-    if colortype == 3:
-        # palette: re-walk chunks for PLTE
-        q = 8
-        while q + 8 <= len(data):
-            (ln,) = struct.unpack_from(">I", data, q)
-            ct = data[q + 4:q + 8]
-            if ct == b"PLTE":
-                body = data[q + 8:q + 8 + ln]
-                palette = [bytes(body[i:i + 3]) for i in range(0, len(body), 3)]
-                break
-            q += 12 + ln
-        if not palette:
-            raise UnsupportedImage("png palette missing PLTE")
-        if bitdepth not in (1, 2, 4, 8):
-            raise UnsupportedImage(f"png palette bitdepth={bitdepth}")
-    elif colortype == 0:
-        if bitdepth not in (1, 8):
-            raise UnsupportedImage(f"png gray bitdepth={bitdepth}")
-    else:
+    if colortype == 3 and not palette:
+        raise UnsupportedImage("png palette missing PLTE")
+    if colortype not in (0, 3):
         raise UnsupportedImage(f"png colortype={colortype}")
 
     raw = zlib.decompress(bytes(idat))
     stride = (width * bitdepth + 7) // 8
-    out = bytearray()
+    rows = []
     prev = bytearray(stride)
     p = 0
     for _ in range(height):
         ftype = raw[p]; p += 1
         line = bytearray(raw[p:p + stride]); p += stride
-        _unfilter(ftype, line, prev, bpp)
-        out += line
+        _unfilter(ftype, line, prev, 1)
+        rows.append(bytes(line))
         prev = line
+    packed = b"".join(rows)
 
-    # expand packed samples to 8-bit via 256-entry tables (C speed)
+    if colortype == 0 and bitdepth == 1:
+        if packed_1bit:
+            return width, height, dpi, "/DeviceGray", 1, packed
+        lut = bytes((i & 1) * 255 for i in range(256))
+        expand = [bytes(((i >> (7 - k)) & 1) for k in range(8))
+                  for i in range(256)]
+        out = b"".join(b"".join(expand[b] for b in row).translate(lut)
+                       for row in rows)
+        return width, height, dpi, "/DeviceGray", 8, out
+
+    if colortype == 0 and bitdepth == 8:
+        return width, height, dpi, "/DeviceGray", 8, packed
+
+    # colortype == 3 (palette), bitdepth 1/2/4/8: expand to RGB
     per_byte = 8 // bitdepth
     mask = (1 << bitdepth) - 1
-    expand_idx = [
-        bytes(((i >> (8 - bitdepth * (k + 1))) & mask) for k in range(per_byte))
+    t3 = [
+        b"".join(
+            palette[(i >> (8 - bitdepth * (k + 1))) & mask]
+            if (i >> (8 - bitdepth * (k + 1))) & mask < len(palette)
+            else b"\x00\x00\x00"
+            for k in range(per_byte)
+        )
         for i in range(256)
     ]
-    if palette is not None:
-        # byte -> that byte's pixels as RGB triplets (256-entry table)
-        t3 = [
-            b"".join(
-                (palette[(i >> (8 - bitdepth * (k + 1))) & mask]
-                 if (i >> (8 - bitdepth * (k + 1))) & mask < len(palette)
-                 else (0, 0, 0))
-                for k in range(per_byte)
-            )
-            for i in range(256)
-        ]
-        out = b"".join(
-            b"".join(t3[b] for b in out[y * stride:(y + 1) * stride])
-            for y in range(height)
-        )
-    else:
-        scale = 255 // mask
-        lut = bytes((i & mask) * scale for i in range(256))
-        out = b"".join(
-            b"".join(expand_idx[b] for b in out[y * stride:(y + 1) * stride])
-                     .translate(lut)
-            for y in range(height)
-        )
-
-    if False:  # colortype == 6: RGBA -> RGB on white (milestone 2)
-        rgb = bytearray(width * height * 3)
-        for i in range(width * height):
-            r, g, b, a = out[i * 4:i * 4 + 4]
-            if a != 255:
-                r = (r * a + 255 * (255 - a)) // 255
-                g = (g * a + 255 * (255 - a)) // 255
-                b = (b * a + 255 * (255 - a)) // 255
-            rgb[i * 3:i * 3 + 3] = bytes((r, g, b))
-        out = rgb
-
-    cs = "/DeviceRGB" if palette is not None else "/DeviceGray"
-    return width, height, dpi, cs, bytes(out)
-
+    out = b"".join(b"".join(t3[b] for b in row) for row in rows)
+    return width, height, dpi, "/DeviceRGB", 8, out
 
 def _unfilter(ftype: int, line: bytearray, prev: bytearray, bpp: int) -> None:
     if ftype == 0:

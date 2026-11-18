@@ -6,6 +6,7 @@ UnsupportedPayload so the caller can fall back to the wrapper backend.
 """
 from __future__ import annotations
 
+import struct
 import sys
 import zlib
 from pathlib import Path
@@ -22,15 +23,38 @@ class UnsupportedPayload(Exception):
         super().__init__(f"unsupported payload {kind or 'unknown'}: {path.name}")
 
 
+def _strip_app14(data: bytes) -> bytes:
+    """Remove APP14 (Adobe) segments, as the reference tool does when
+    embedding JPEGs into PDF."""
+    out = bytearray(data[:2])
+    pos = 2
+    while pos + 4 <= len(data) and data[pos] == 0xFF:
+        marker = data[pos + 1]
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            out += data[pos:pos + 2]
+            pos += 2
+            continue
+        (length,) = struct.unpack_from(">H", data, pos + 2)
+        seg = data[pos:pos + 2 + length]
+        if marker != 0xEE:
+            out += seg
+        pos += 2 + length
+        if marker == 0xDA:
+            out += data[pos:]
+            break
+    return bytes(out)
+
+
 def _load_page(path: Path) -> Page:
     kind = sniff_file(path)
     data = path.read_bytes()
     if kind == "jpeg":
         w, h, dpi = jpeg_info(data)
-        return Page(w, h, dpi, "/DeviceRGB", 8, data, "/DCTDecode")
+        return Page(w, h, dpi, "/DeviceRGB", 8,
+                    _strip_app14(data), "/DCTDecode")
     if kind == "png":
-        w, h, dpi, cs, raw = png_decode(data)
-        return Page(w, h, dpi, cs, 8, zlib.compress(raw), "/FlateDecode")
+        w, h, dpi, cs, bits, raw = png_decode(data)
+        return Page(w, h, dpi, cs, bits, zlib.compress(raw), "/FlateDecode")
     raise UnsupportedPayload(path, kind)
 
 

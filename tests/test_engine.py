@@ -54,10 +54,10 @@ class SortTest(unittest.TestCase):
 class PngDecodeTest(unittest.TestCase):
     def test_roundtrip(self):
         data = make_png(8, 4, gray=128)
-        w, h, dpi, cs, raw = png_decode(data)
+        w, h, dpi, cs, bits, raw = png_decode(data, packed_1bit=False)
         self.assertEqual((w, h), (8, 4))
         self.assertEqual(cs, "/DeviceGray")
-        self.assertEqual(len(raw), 8 * 4)
+        self.assertEqual((bits, len(raw)), (8, 8 * 4))
         self.assertEqual(raw[0], 128)
 
 
@@ -77,11 +77,10 @@ def make_pal_png(w=8, h=2, bitdepth=1):
 class PalettePngTest(unittest.TestCase):
     def test_palette1(self):
         from engine.imgdec import png_decode
-        w, h, dpi, cs, raw = png_decode(make_pal_png())
+        w, h, dpi, cs, bits, raw = png_decode(make_pal_png())
         self.assertEqual((w, h), (8, 2))
         self.assertEqual(cs, "/DeviceRGB")
         self.assertEqual(len(raw), 8 * 2 * 3)
-        # 0xAA = 10101010 -> white,black,... starting white
         self.assertEqual(raw[0:3], b"\xff\xff\xff")
         self.assertEqual(raw[3:6], b"\x00\x00\x00")
 
