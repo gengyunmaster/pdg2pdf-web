@@ -487,13 +487,23 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         kill_app(); return 3;
     }
     {
-        HTREEITEM ri = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
-        while (ri) {
-            WCHAR t[256] = {0};
-            if (remote_item_text(tree, ri, t, 256)) {
-                fprintf(stderr, "pdgdrive: root item: "); utf8_print(stderr, t);
+        HTREEITEM lvl[3] = { NULL, NULL, NULL };
+        lvl[0] = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+        for (int d = 0; d < 3 && lvl[d]; d++) {
+            HTREEITEM it = lvl[d];
+            while (it) {
+                WCHAR t[256] = {0};
+                if (remote_item_text(tree, it, t, 256)) {
+                    fprintf(stderr, "pdgdrive: L%d item: ", d); utf8_print(stderr, t);
+                }
+                it = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)it);
             }
-            ri = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)ri);
+            if (d < 2) {
+                SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)lvl[d]);
+                Sleep(800);
+                lvl[d + 1] = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM,
+                                                     TVGN_CHILD, (LPARAM)lvl[d]);
+            }
         }
     }
     int picked = tree ? pick_path_in_tree(tree, src_win) : 0;
