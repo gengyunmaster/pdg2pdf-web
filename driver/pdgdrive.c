@@ -297,6 +297,21 @@ static int pick_path_in_tree(HWND tree, const WCHAR *winpath) {
     return 1;
 }
 
+
+/* Desktop-rooted pick: the deployer plants a symlink on the Wine desktop
+ * (see worker); we only need to expand the root and select that child. */
+static int pick_named_child(HWND tree, const WCHAR *child) {
+    HTREEITEM desk = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+    if (!desk) return 0;
+    SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)desk);
+    Sleep(1500);
+    HTREEITEM it = find_child_by_text(tree, desk, child);
+    if (!it) return 0;
+    SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)it);
+    Sleep(300);
+    return 1;
+}
+
 static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
     WCHAR cls[64] = {0}, title[256] = {0};
     (void)lp;
@@ -352,6 +367,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)cmdline; (void)show;
     WCHAR *cl = GetCommandLineW();
     WCHAR src[MAX_PATH] = {0}, watch[MAX_PATH] = {0}, app[MAX_PATH] = {0};
+    WCHAR name[MAX_PATH] = {0};
     int timeout_sec = 1800;
 
     /* arg parse: --src <dir> --watch <dir> [--timeout N] [--app exe] */
@@ -366,6 +382,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 wcsncpy(watch, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--app") && i + 1 < argc)
                 wcsncpy(app, argv[++i], MAX_PATH - 1);
+            else if (!wcscmp(argv[i], L"--name") && i + 1 < argc)
+                wcsncpy(name, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--timeout") && i + 1 < argc)
                 timeout_sec = _wtoi(argv[++i]);
         }
@@ -513,7 +531,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             }
         }
     }
-    int picked = tree ? pick_path_in_tree(tree, src_win) : 0;
+    int picked = 0;
+    if (name[0] && tree) picked = pick_named_child(tree, name);
+    else if (tree) picked = pick_path_in_tree(tree, src_win);
     fprintf(stderr, "pdgdrive: tree pick=%d ok_enabled=%d\n",
             picked, ok0 ? IsWindowEnabled(ok0) : -1);
     if (picked == 2) {

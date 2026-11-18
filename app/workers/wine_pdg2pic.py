@@ -25,6 +25,11 @@ DRIVER = Path(__file__).resolve().parents[2] / "driver" / "pdgdrive.exe"
 TIMEOUT = int(os.environ.get("PDG2PDF_CONVERT_TIMEOUT", "1800"))
 
 
+
+def env_wineprefix() -> str:
+    return os.environ.get("WINEPREFIX", str(Path.home() / ".wine"))
+
+
 def _book_root(extracted: Extraction) -> Path:
     """Directory that directly contains the PDG files."""
     pdgs = find_pdg_files(extracted.extract_dir)
@@ -61,10 +66,29 @@ class WinePdg2PicConverter:
         driver = stage / "pdgdrive.exe"
         shutil.copyfile(DRIVER, driver)
 
+        # Plant a symlink to the book on the Wine desktop so the driver's
+        # tree walk only needs Desktop -> <name> (Wine does not enumerate
+        # drive contents inside the folder picker).
+        link_name = os.environ.get("PDG2PDF_DESKTOP_NAME", "pdgbook")
+        prefix = Path(env_wineprefix())
+        for desk in (prefix / "drive_c/users/root/Desktop",
+                     prefix / "drive_c/users/Public/Desktop"):
+            try:
+                desk.mkdir(parents=True, exist_ok=True)
+                link = desk / link_name
+                if link.exists() or link.is_symlink():
+                    if link.is_symlink():
+                        link.unlink()
+                    else:
+                        continue
+                link.symlink_to(src.resolve())
+            except OSError:
+                continue
+
         env = dict(os.environ)
         env.setdefault("WINEDEBUG", "-1")
         cmd = ["wine", str(driver), "--src", str(src), "--watch", str(src),
-               "--timeout", str(TIMEOUT)]
+               "--name", link_name, "--timeout", str(TIMEOUT)]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=stage,
