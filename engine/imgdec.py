@@ -10,6 +10,11 @@ import struct
 import zlib
 
 DEFAULT_DPI = 150
+MIN_DPI, MAX_DPI = 50, 1200
+
+
+def sane_dpi(dpi: int) -> int:
+    return dpi if MIN_DPI <= dpi <= MAX_DPI else DEFAULT_DPI
 
 
 class UnsupportedImage(ValueError):
@@ -41,7 +46,7 @@ def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
         elif ctype == b"pHYs" and len(body) == 9:
             ppm_x, ppm_y, unit = struct.unpack(">IIB", body)
             if unit == 1 and ppm_x > 0:
-                dpi = max(1, round(ppm_x * 0.0254))
+                dpi = sane_dpi(round(ppm_x * 0.0254))
         elif ctype == b"IDAT":
             idat += body
         elif ctype == b"IEND":
@@ -61,7 +66,7 @@ def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
             ct = data[q + 4:q + 8]
             if ct == b"PLTE":
                 body = data[q + 8:q + 8 + ln]
-                palette = [tuple(body[i:i + 3]) for i in range(0, len(body), 3)]
+                palette = [bytes(body[i:i + 3]) for i in range(0, len(body), 3)]
                 break
             q += 12 + ln
         if not palette:
@@ -86,30 +91,36 @@ def png_decode(data: bytes) -> tuple[int, int, int, str, bytes]:
         out += line
         prev = line
 
-    if palette is not None:  # expand indices to RGB
-        mask = (1 << bitdepth) - 1
-        per_byte = 8 // bitdepth
-        rgb = bytearray(width * height * 3)
-        i = 0
-        for y in range(height):
-            row = out[y * stride:(y + 1) * stride]
-            for x in range(width):
-                idx = (row[x // per_byte]
-                       >> (8 - bitdepth * (x % per_byte + 1))) & mask
-                r, g, b = palette[idx] if idx < len(palette) else (0, 0, 0)
-                rgb[i:i + 3] = bytes((r, g, b))
-                i += 3
-        out = rgb
-    elif bitdepth == 1:  # unpack MSB-first bits to 8-bit gray
-        expanded = bytearray(width * height)
-        i = 0
-        for y in range(height):
-            row = out[y * stride:(y + 1) * stride]
-            for x in range(width):
-                bit = (row[x // 8] >> (7 - x % 8)) & 1
-                expanded[i] = 255 if bit else 0
-                i += 1
-        out = expanded
+    # expand packed samples to 8-bit via 256-entry tables (C speed)
+    per_byte = 8 // bitdepth
+    mask = (1 << bitdepth) - 1
+    expand_idx = [
+        bytes(((i >> (8 - bitdepth * (k + 1))) & mask) for k in range(per_byte))
+        for i in range(256)
+    ]
+    if palette is not None:
+        # byte -> that byte's pixels as RGB triplets (256-entry table)
+        t3 = [
+            b"".join(
+                (palette[(i >> (8 - bitdepth * (k + 1))) & mask]
+                 if (i >> (8 - bitdepth * (k + 1))) & mask < len(palette)
+                 else (0, 0, 0))
+                for k in range(per_byte)
+            )
+            for i in range(256)
+        ]
+        out = b"".join(
+            b"".join(t3[b] for b in out[y * stride:(y + 1) * stride])
+            for y in range(height)
+        )
+    else:
+        scale = 255 // mask
+        lut = bytes((i & mask) * scale for i in range(256))
+        out = b"".join(
+            b"".join(expand_idx[b] for b in out[y * stride:(y + 1) * stride])
+                     .translate(lut)
+            for y in range(height)
+        )
 
     if False:  # colortype == 6: RGBA -> RGB on white (milestone 2)
         rgb = bytearray(width * height * 3)
@@ -176,9 +187,9 @@ def jpeg_info(data: bytes) -> tuple[int, int, int]:
         if marker == 0xE0 and seg.startswith(b"JFIF\x00") and len(seg) >= 12:
             units, xd, yd = struct.unpack_from(">BHH", seg, 7)
             if units == 1 and xd:
-                dpi = xd
+                dpi = sane_dpi(xd)
             elif units == 2 and xd:
-                dpi = round(xd * 2.54)
+                dpi = sane_dpi(round(xd * 2.54))
         elif marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
                         0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
             h, w = struct.unpack_from(">HH", seg, 1)

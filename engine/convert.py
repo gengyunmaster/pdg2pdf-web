@@ -34,6 +34,18 @@ def _load_page(path: Path) -> Page:
     raise UnsupportedPayload(path, kind)
 
 
+
+
+def _normalize_width(pages: list[Page]) -> None:
+    """Scale per-page dpi so every page has the same width in points
+    (the reference tool keeps one page width per book)."""
+    if not pages:
+        return
+    max_w = max(pg.width_px * 72.0 / pg.dpi for pg in pages)
+    for pg in pages:
+        pg.dpi = pg.width_px * 72.0 / max_w
+
+
 def convert_book(src_dir: Path, out_pdf: Path) -> int:
     pages_src = list_pages(src_dir)
     if not pages_src:
@@ -41,6 +53,7 @@ def convert_book(src_dir: Path, out_pdf: Path) -> int:
     pages: list[Page] = []
     for p in pages_src:
         pages.append(_load_page(p))
+    _normalize_width(pages)
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     out_pdf.write_bytes(write_pdf(pages))
     return len(pages)
