@@ -77,6 +77,14 @@ then by number. The reference tool additionally offers "cov002 to the end".
 
 ## 6. Open questions for corpus analysis
 
+Observed on the calibration corpus: the reference tool renders every page
+of a book at one uniform width, sized as 
+(yielding ~477 pt for 1984 px-wide pages, i.e. a 300 dpi convention on
+those samples). Our engine currently trusts the image's own density hint,
+which can disagree with the container header by a constant factor — the
+header field is authoritative and its byte offset is the key recovery
+target below.
+
 The exact byte layout of the proprietary header (per V1/V2 variant) is not
 yet fully pinned down. It will be recovered by:
 
