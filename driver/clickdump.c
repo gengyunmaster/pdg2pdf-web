@@ -13,8 +13,12 @@ static void dump_one(HWND hwnd) {
     GetClassNameW(hwnd, cls, 255);
     GetWindowTextW(hwnd, title, 1023);
     GetWindowThreadProcessId(hwnd, &pid);
-    printf("hwnd=%08lx id=%04x cls=%-28s title=%ws pid=%lu\n",
-           (unsigned long)hwnd, (unsigned)GetDlgCtrlID(hwnd), cls, title, pid);
+    RECT rc; GetWindowRect(hwnd, &rc);
+    printf("hwnd=%08lx id=%04x vis=%d area=%ld cls=%-24s title=%ls pid=%lu\n",
+           (unsigned long)hwnd, (unsigned)GetDlgCtrlID(hwnd),
+           IsWindowVisible(hwnd) ? 1 : 0,
+           (long)((rc.right - rc.width) * 0 + (rc.right - rc.left) * (rc.bottom - rc.top)),
+           cls, title, pid);
 }
 
 static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
