@@ -249,7 +249,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
 
         STARTUPINFOW si = {0};
         si.cb = sizeof(si);
-        si.wShowWindow = SW_HIDE;
+        si.wShowWindow = SW_SHOW;
         si.dwFlags = STARTF_USESHOWWINDOW;
         WCHAR cmdbuf[MAX_PATH + 8] = {0};
         _snwprintf(cmdbuf, MAX_PATH + 7, L"\"%s\"", probe);
