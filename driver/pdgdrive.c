@@ -368,6 +368,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
     SendMessageTimeoutW(ok, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
+    Sleep(1000);
+    WCHAR after[512] = {0};
+    GetDlgItemTextW(g_main, SRC_EDIT_ID, after, 511);
+    fprintf(stderr, "pdgdrive: source edit after picker: "); utf8_print(stderr, after);
+    if (IsWindow(picker)) fprintf(stderr, "pdgdrive: WARN picker still open\n");
 
     /* 3. observe the list (informational; conversion may not need it) */
     HWND list = GetDlgItem(g_main, FILE_LIST_ID);
