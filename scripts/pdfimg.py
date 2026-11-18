@@ -34,37 +34,42 @@ _OBJ_HEAD = re.compile(rb"(\d+)\s+(\d+)\s+obj")
 
 
 def extract_images(pdf: bytes) -> list[ImageStream]:
-    """Linear-scan extraction: find object headers, then a bounded window
-    after each for the dict + stream."""
+    """Layout-driven extraction: jump from endobj to the next header so
+    binary stream content can never inject phantom objects."""
     out = []
-    last_num = 0
-    for m in _OBJ_HEAD.finditer(pdf):
-        obj_num = int(m.group(1))
-        if obj_num != last_num + 1:
-            continue  # phantom match inside stream data
-        last_num = obj_num
-        start = m.end()
-        dict_start = pdf.find(b"<<", start, start + 4096)
+    pos = 0
+    n = len(pdf)
+    while pos < n:
+        m = _OBJ_HEAD.search(pdf, pos)
+        if not m:
+            break
+        dict_start = pdf.find(b"<<", m.end(), m.end() + 4096)
         if dict_start < 0:
+            pos = m.end()
             continue
         dict_end = pdf.find(b">>", dict_start, dict_start + 8192)
         if dict_end < 0:
+            pos = m.end()
             continue
         d = pdf[dict_start:dict_end]
         if b"/Subtype /Image" not in d:
+            endobj = pdf.find(b"endobj", m.end())
+            if endobj < 0:
+                break
+            pos = endobj + 6
             continue
-        # stream must follow the dict closely
         stream_pos = pdf.find(b"stream", dict_end, dict_end + 16)
         if stream_pos < 0:
+            pos = dict_end + 2
             continue
         data_start = stream_pos + 6
         if pdf[data_start:data_start + 2] == b"\r\n":
             data_start += 2
         elif pdf[data_start:data_start + 1] in (b"\n", b"\r"):
             data_start += 1
-        end = pdf.find(b"endstream", data_start, data_start + 400_000_000)
+        end = pdf.find(b"endstream", data_start)
         if end < 0:
-            continue
+            break
         raw = pdf[data_start:end]
         while raw.endswith((b"\r", b"\n")):
             raw = raw[:-1]
@@ -85,6 +90,10 @@ def extract_images(pdf: bytes) -> list[ImageStream]:
             colorspace=cs.group(1).decode() if cs else None,
             params=params, raw=raw,
         ))
+        endobj = pdf.find(b"endobj", end)
+        if endobj < 0:
+            break
+        pos = endobj + 6
     return out
 
 
