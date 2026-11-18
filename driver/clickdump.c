@@ -8,6 +8,21 @@
 static DWORD g_pid = 0;
 static HWND g_main = NULL;
 
+
+static void utf8p(const WCHAR *w) {
+    if (w && w[0]) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+        if (n > 0) {
+            char *b = (char *)malloc((size_t)n);
+            WideCharToMultiByte(CP_UTF8, 0, w, -1, b, n, NULL, NULL);
+            printf("%s\n", b);
+            free(b);
+            return;
+        }
+    }
+    printf("\n");
+}
+
 static void dump_one(HWND hwnd) {
     WCHAR cls[256] = {0}, title[1024] = {0};
     DWORD pid = 0;
@@ -69,6 +84,62 @@ static int drop_dir(HWND target, const WCHAR *dir) {
 
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)show;
+    if (cmdline && strstr(cmdline, "--map")) {
+        struct find_ctx cc = { "Pdg2Pic", NULL };
+        for (int i = 0; i < 60 && !cc.found; i++) { EnumWindows(find_proc, (LPARAM)&cc); if (!cc.found) Sleep(500); }
+        if (!cc.found) { fprintf(stderr, "no main\n"); return 3; }
+        g_main = cc.found;
+        GetWindowThreadProcessId(g_main, &g_pid);
+        HANDLE hp = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ |
+                                    PROCESS_VM_WRITE, FALSE, g_pid);
+        HMENU menu = GetMenu(g_main);
+        if (menu) {
+            int n = GetMenuItemCount(menu);
+            for (int i = 0; i < n; i++) {
+                WCHAR txt[128] = {0};
+                GetMenuStringW(menu, i, txt, 127, MF_BYPOSITION);
+                printf("menu[%d] id=%u text=", i, GetMenuItemID(menu, i));
+                utf8p(txt);
+                HMENU sub = GetSubMenu(menu, i);
+                if (sub) {
+                    int m = GetMenuItemCount(sub);
+                    for (int j = 0; j < m; j++) {
+                        WCHAR t2[128] = {0};
+                        GetMenuStringW(sub, j, t2, 127, MF_BYPOSITION);
+                        printf("   sub[%d] id=%u text=", j, GetMenuItemID(sub, j));
+                        utf8p(t2);
+                    }
+                }
+            }
+        } else printf("no main menu\n");
+        HWND tb = FindWindowExW(g_main, NULL, L"ToolbarWindow32", NULL);
+        if (tb && hp) {
+            int cnt = (int)SendMessageW(tb, TB_BUTTONCOUNT, 0, 0);
+            printf("toolbar buttons=%d\n", cnt);
+            for (int i = 0; i < cnt; i++) {
+                int need = (int)SendMessageW(tb, TB_GETBUTTONTEXTW, i, 0);
+                SIZE_T bytes = ((SIZE_T)(need > 0 ? need : 0) + 2) * sizeof(WCHAR);
+                LPVOID rb = VirtualAllocEx(hp, NULL, bytes, MEM_COMMIT, PAGE_READWRITE);
+                WCHAR *loc = (WCHAR *)calloc(1, bytes);
+                if (need > 0) {
+                    SendMessageW(tb, TB_GETBUTTONTEXTW, i, (LPARAM)rb);
+                    SIZE_T rd = 0;
+                    ReadProcessMemory(hp, rb, loc, bytes, &rd);
+                    loc[need] = 0;
+                }
+                LPVOID rbb = VirtualAllocEx(hp, NULL, 64, MEM_COMMIT, PAGE_READWRITE);
+                SendMessageW(tb, TB_GETBUTTON, i, (LPARAM)rbb);
+                TBBUTTON tbb; SIZE_T rd2 = 0;
+                ReadProcessMemory(hp, rbb, &tbb, sizeof(tbb), &rd2);
+                printf("tb[%d] id=%d text=", i, tbb.idCommand);
+                utf8p(loc);
+                VirtualFreeEx(hp, rb, 0, MEM_RELEASE);
+                VirtualFreeEx(hp, rbb, 0, MEM_RELEASE);
+                free(loc);
+            }
+        } else printf("no toolbar\n");
+        return 0;
+    }
     if (cmdline && strstr(cmdline, "--drop")) {
         WCHAR dir[MAX_PATH] = {0};
         sscanf(strstr(cmdline, "--drop") + 6, "%299s", dir); /* ascii path ok */
