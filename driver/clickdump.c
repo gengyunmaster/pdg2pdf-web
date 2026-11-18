@@ -50,8 +50,44 @@ static BOOL CALLBACK top_all(HWND hwnd, LPARAM lp) {
     return TRUE;
 }
 
+static int drop_dir(HWND target, const WCHAR *dir) {
+    size_t len = wcslen(dir) + 1;
+    typedef struct { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; } DF;
+    size_t bytes = sizeof(DF) + (len + 1) * sizeof(WCHAR);
+    HGLOBAL h = GlobalAlloc(GHND | GMEM_SHARE, bytes);
+    if (!h) return 0;
+    DF *df = (DF *)GlobalLock(h);
+    df->pFiles = sizeof(DF); df->pt.x = df->pt.y = 0;
+    df->fNC = FALSE; df->fWide = TRUE;
+    memcpy((char *)df + sizeof(DF), dir, len * sizeof(WCHAR));
+    ((WCHAR *)((char *)df + sizeof(DF)))[len] = 0;
+    GlobalUnlock(h);
+    if (!PostMessageW(target, WM_DROPFILES, (WPARAM)h, 0)) { GlobalFree(h); return 0; }
+    return 1;
+}
+
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)show;
+    if (cmdline && strstr(cmdline, "--drop")) {
+        WCHAR dir[MAX_PATH] = {0};
+        sscanf(strstr(cmdline, "--drop") + 6, "%299s", dir); /* ascii path ok */
+        for (int i = 0; i < 60 && !g_main; i++) { EnumWindows(main_enum, 0); if (!g_main) Sleep(500); }
+        if (!g_main) { fprintf(stderr, "no main\n"); return 3; }
+        HWND list = FindWindowExW(g_main, NULL, L"SysListView32", NULL);
+        HWND targets[6]; const char *names[6]; int n = 0;
+        targets[n] = g_main; names[n++] = "main";
+        if (list) { targets[n] = list; names[n++] = "list"; }
+        HWND t2 = FindWindowExW(g_main, NULL, L"Edit", NULL);
+        if (t2) { targets[n] = t2; names[n++] = "edit1"; }
+        for (int i = 0; i < n; i++) {
+            if (drop_dir(targets[i], dir))
+                printf("posted drop to %s (%lx)\n", names[i], (unsigned long)targets[i]);
+        }
+        for (int s = 0; s < 15; s++) Sleep(1000);
+        if (list) printf("list items=%ld\n",
+            (long)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0));
+        return 0;
+    }
     int id = cmdline ? atoi(cmdline) : 0;
     if (id <= 0) { fprintf(stderr, "usage: clickdump.exe <control-id>\n"); return 2; }
 
