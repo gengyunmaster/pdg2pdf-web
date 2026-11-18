@@ -6,7 +6,22 @@ Linux Docker container.
 
 ## Status
 
-Early development. See [Roadmap](#roadmap).
+Phase A functional: the full pipeline (upload archive -> extract -> drive
+Pdg2Pic under Wine -> download PDF) works end-to-end. The automation relies
+on discoveries from live UI reconnaissance under Wine:
+
+- source selection: the app only accepts a source folder via its own folder
+  picker (button `1000`) — the driver walks the picker's tree to a staging
+  directory planted on the Wine desktop (Wine pickers cannot resolve
+  symlinks or enumerate drive contents, hence the real directory there);
+- the auto-statistics modal dialog is auto-dismissed;
+- `Pdg2Pic.ini` pre-seeding (UTF-16 `[ParaBlock]`, `PARA_TGT_TYPE=1`,
+  `PARA_AUTO_CHK=0`, `PARA_PREVIEW=0`) puts the app into direct-PDF mode;
+- the produced PDF is searched in the target directory and the Wine user
+  profile directory (the app writes `<source folder name>.pdf` there).
+
+Known limitations: OCR (double-layer PDF) is unsupported (MODI is
+Windows-only); encrypted PDG is unsupported (as in the original).
 
 ## How it works
 
@@ -89,7 +104,8 @@ python3 -m unittest discover -s tests
 ## Roadmap
 
 - [x] Project skeleton: FastAPI app, job queue, archive extraction (zip/rar/7z/uvz with password list)
-- [ ] Phase A: Wine wrapper backend (`wine_pdg2pic`) + Win32 driver + Dockerfile
+- [x] Phase A: Wine wrapper backend (`wine_pdg2pic`) + Win32 driver + Dockerfile
+- [x] End-to-end smoke test (`scripts/e2e_test.sh`)
 - [ ] Web UI polish, job retention/cleanup
 - [ ] Phase B: self-developed engine (`FORMAT.md`, pure open-source stack), worker swap
 - [ ] Release
