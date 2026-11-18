@@ -178,8 +178,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     printf("clicking id=%d -> hwnd=%lx enabled=%d\n", id,
            (unsigned long)btn, btn ? IsWindowEnabled(btn) : -1);
     if (!btn) { printf("no such control\n"); return 4; }
-    SendMessageTimeoutW(g_main, WM_COMMAND, MAKEWPARAM(id, BN_CLICKED),
-                        (LPARAM)btn, SMTO_ABORTIFHUNG, 5000, NULL);
+    PostMessageW(btn, BM_CLICK, 0, 0);
     Sleep(2500);
     printf("--- top-level after click ---\n");
     EnumWindows(top_all, 0);
