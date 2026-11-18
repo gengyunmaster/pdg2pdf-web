@@ -33,7 +33,7 @@ static void dump_one(HWND hwnd) {
     POINT pt = { rc.left, rc.top };
     HWND top = GetAncestor(hwnd, GA_ROOT);
     if (top && top != hwnd) ScreenToClient(top, &pt);
-    printf("hwnd=%08lx id=%04x vis=%d xy=%d,%d wh=%dx%d cls=%-20s title=%ls pid=%lu\n",
+    printf("hwnd=%08lx id=%04x vis=%d xy=%d,%d wh=%dx%d cls=%-20ls title=%ls pid=%lu\n",
            (unsigned long)hwnd, (unsigned)GetDlgCtrlID(hwnd),
            IsWindowVisible(hwnd) ? 1 : 0,
            pt.x, pt.y, rc.right - rc.left, rc.bottom - rc.top,
