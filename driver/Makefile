@@ -1,4 +1,6 @@
-CC ?= i686-w64-mingw32-gcc
+# Plain assignment on purpose: make's built-in default (CC=cc) would defeat
+# '?='. Command-line overrides still work: make CC=...
+CC = i686-w64-mingw32-gcc
 
 all: pdgdrive.exe windowdump.exe
 
