@@ -9,9 +9,11 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     WINEDEBUG=-1
 
-# Wine32 (the app is a 32-bit PE), Xvfb for headless GUI, 7z for archives,
-# MinGW to cross-compile the Win32 driver at build time.
+# Wine32 (the app is a 32-bit PE), Xvfb for headless GUI, 7z for archives
+# (p7zip-rar lives in non-free), MinGW to cross-compile the Win32 driver.
 RUN dpkg --add-architecture i386 \
+ && sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' \
+        /etc/apt/sources.list.d/debian.sources \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
         wine32 xvfb p7zip-full p7zip-rar \
