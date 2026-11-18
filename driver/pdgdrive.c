@@ -802,6 +802,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
             break;
         }
+        if (a == 2) {
+            fprintf(stderr, "pdgdrive: force-enabling main and start\n");
+            EnableWindow(g_main, TRUE);
+            EnableWindow(btn, TRUE);
+        }
         Sleep(5000);
     }
 
