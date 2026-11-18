@@ -262,10 +262,22 @@ static int ole_drop_at(const WCHAR *dir, int x, int y) {
     src->iface.lpVtbl = &ds_vtbl;
     src->refs = 1;
     SetCursorPos(x, y);
-    Sleep(200);
+    mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, 0, 0, 0, 0);
+    Sleep(400);
+    {
+        POINT cur; GetCursorPos(&cur);
+        HWND under = WindowFromPoint(cur);
+        WCHAR cls[64] = {0};
+        if (under) GetClassNameW(under, cls, 63);
+        fprintf(stderr, "pdgdrive: cursor %d,%d (want %d,%d) under cls=",
+                cur.x, cur.y, x, y);
+        utf8_print(stderr, cls);
+    }
     DWORD effect = 0;
     HRESULT hr = DoDragDrop((IDataObject *)obj, (IDropSource *)src,
                             DROPEFFECT_COPY, &effect);
+    fprintf(stderr, "pdgdrive: DoDragDrop hr=%08lx effect=%lu\n",
+            (unsigned long)hr, (unsigned long)effect);
     obj->iface.lpVtbl->Release((IDataObject *)obj);
     src->iface.lpVtbl->Release((IDropSource *)src);
     return SUCCEEDED(hr);
