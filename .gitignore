@@ -13,10 +13,9 @@ vendor/*.exe
 vendor/*.zip
 !vendor/.gitkeep
 
-# Secrets & private material must never enter this repository.
-passwords*.txt
-*.env
-.env
+# Local overrides of the bundled word list stay private.
+*.local.txt
+passwords.local.txt
 
 # Misc
 *.log

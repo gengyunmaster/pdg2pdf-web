@@ -5,8 +5,8 @@ services:
       - "8000:8000"
     volumes:
       - pdg2pdf-data:/srv/data
-      # Optional: archive password list (never commit this file)
-      # - ./vendor/passwords.txt:/srv/vendor/passwords.txt:ro
+      # Optional: mount a custom archive password list (overrides the bundled one)
+      # - ./my-wordlist.txt:/srv/vendor/passwords.txt:ro
     environment:
       PDG2PDF_CONVERTER: wine_pdg2pic
       PDG2PIC_EXE: /srv/vendor/Pdg2Pic.exe

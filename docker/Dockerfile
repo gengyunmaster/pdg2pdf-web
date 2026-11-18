@@ -26,9 +26,10 @@ WORKDIR /srv
 COPY requirements.txt ./
 RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
-# Application + driver build
+# Application + driver build + bundled archive-password word list
 COPY app ./app
 COPY driver ./driver
+COPY wordlists ./wordlists
 RUN make -C driver \
  && rm -rf driver/*.o
 

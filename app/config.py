@@ -13,11 +13,13 @@ RESULT_DIR = DATA_DIR / "results"
 WORK_DIR = DATA_DIR / "work"
 
 # Optional word list for encrypted archives (one password per line).
-# The real list is deployer-provided and must never be committed.
+# Defaults to the bundled community-collected list; point this variable at
+# your own file to override it.
+DEFAULT_WORDLIST = BASE_DIR / "wordlists" / "archive-passwords.txt"
 PASSWORD_LIST_FILE = (
     Path(os.environ["PDG2PDF_PASSWORD_LIST"])
     if os.environ.get("PDG2PDF_PASSWORD_LIST")
-    else None
+    else DEFAULT_WORDLIST
 )
 
 MAX_UPLOAD_BYTES = int(os.environ.get("PDG2PDF_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
