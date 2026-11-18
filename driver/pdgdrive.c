@@ -22,7 +22,6 @@
 #include <string.h>
 #include <windows.h>
 #include <commctrl.h>
-#include <shellapi.h>
 
 /* DROPFILES is ABI-stable; declare it locally to avoid header-guard
  * differences across mingw-w64 versions. */
@@ -33,7 +32,10 @@ typedef struct {
     BOOL  fWide;
 } DRV_DROPFILES;   /* DROPFILES for WM_DROPFILES */
 
-#define SRC_EDIT_ID   1066   /* 0x42a  source folder edit            */
+#define SRC_EDIT_ID     1066 /* 0x42a  source folder edit                */
+#define SRC_BROWSE_ID   1004 /* 0x3ec  opens the source folder picker     */
+#define PICKER_EDIT_ID  3745 /* 0xea1  folder-name edit in the picker     */
+#define PICKER_OK_ID       1 /*        picker's OK button                 */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                 */
 #define START_BTN_ID  1      /* IDOK, labeled "4 ..." = start        */
 
@@ -142,30 +144,6 @@ static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
         return FALSE;
     }
     return TRUE;
-}
-
-/* Post a synthetic WM_DROPFILES carrying one directory path. Drag-and-drop
- * is a documented input path of the app, so this replaces the fragile
- * edit-control notification chain. */
-static int drop_folder(HWND target, const WCHAR *dir) {
-    size_t len = wcslen(dir) + 1;              /* one path + second NUL */
-    size_t bytes = sizeof(DRV_DROPFILES) + (len + 1) * sizeof(WCHAR);
-    HGLOBAL h = GlobalAlloc(GHND | GMEM_SHARE, bytes);
-    if (!h) return 0;
-    DRV_DROPFILES *df = (DRV_DROPFILES *)GlobalLock(h);
-    if (!df) { GlobalFree(h); return 0; }
-    df->pFiles = sizeof(DRV_DROPFILES);
-    df->pt.x = df->pt.y = 0;
-    df->fNC = FALSE;
-    df->fWide = TRUE;
-    memcpy((char *)df + sizeof(DRV_DROPFILES), dir, len * sizeof(WCHAR));
-    ((WCHAR *)((char *)df + sizeof(DRV_DROPFILES)))[len] = 0;
-    GlobalUnlock(h);
-    if (!PostMessageW(target, WM_DROPFILES, (WPARAM)h, 0)) {
-        GlobalFree(h);
-        return 0;
-    }
-    return 1;
 }
 
 static int find_pdf(const WCHAR *watch, WCHAR *out, size_t cap) {
@@ -282,28 +260,37 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
-    /* 2. feed the source folder: edit text + synthetic notifications */
-    HWND edit = GetDlgItem(g_main, SRC_EDIT_ID);
-    HWND list = GetDlgItem(g_main, FILE_LIST_ID);
-    fprintf(stderr, "pdgdrive: edit=%lx list=%lx\n",
-            (unsigned long)edit, (unsigned long)list);
-    if (!edit) { fprintf(stderr, "pdgdrive: source edit not found\n"); kill_app(); return 3; }
-    SetDlgItemTextW(g_main, SRC_EDIT_ID, src);
-    WCHAR back[512] = {0};
-    GetDlgItemTextW(g_main, SRC_EDIT_ID, back, 511);
-    fprintf(stderr, "pdgdrive: edit now: "); utf8_print(stderr, back);
-    /* fire both kill-focus and change notifications like a real user would */
-    SendMessageW(g_main, WM_COMMAND,
-                 MAKEWPARAM(SRC_EDIT_ID, EN_KILLFOCUS), (LPARAM)edit);
-    SendMessageW(g_main, WM_COMMAND,
-                 MAKEWPARAM(SRC_EDIT_ID, EN_CHANGE), (LPARAM)edit);
-    if (!drop_folder(g_main, src)) {
-        fprintf(stderr, "pdgdrive: WM_DROPFILES failed\n");
+    /* 2. open the source folder picker and submit our path */
+    HWND browse = GetDlgItem(g_main, SRC_BROWSE_ID);
+    if (!browse) { fprintf(stderr, "pdgdrive: browse button missing\n"); kill_app(); return 3; }
+    PostMessageW(browse, BM_CLICK, 0, 0);
+
+    /* wait for the picker (a #32770 owned by the app, not the main window) */
+    HWND picker = NULL;
+    for (int i = 0; i < 40 && !picker; i++) {
+        Sleep(500);
+        for (HWND h = FindWindowExW(NULL, NULL, L"#32770", NULL); h;
+             h = FindWindowExW(NULL, h, L"#32770", NULL)) {
+            DWORD p = 0; GetWindowThreadProcessId(h, &p);
+            if (p == g_app_pid && h != g_main) { picker = h; break; }
+        }
     }
+    if (!picker) { fprintf(stderr, "pdgdrive: folder picker did not open\n"); kill_app(); return 3; }
+    fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
+
+    if (!SetDlgItemTextW(picker, PICKER_EDIT_ID, src)) {
+        fprintf(stderr, "pdgdrive: picker edit not found\n");
+        kill_app(); return 3;
+    }
+    Sleep(300);
+    HWND ok = GetDlgItem(picker, PICKER_OK_ID);
+    if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
+    SendMessageW(ok, BM_CLICK, 0, 0);
 
     /* 3. wait for the scan to populate the file list */
+    HWND list = GetDlgItem(g_main, FILE_LIST_ID);
     int items = 0;
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 60; i++) {
         items = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
         if (items > 0) break;
         Sleep(500);
