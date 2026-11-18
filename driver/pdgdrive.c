@@ -105,6 +105,21 @@ static BOOL CALLBACK popup_enum(HWND hwnd, LPARAM lp) {
     return TRUE;
 }
 
+
+static BOOL CALLBACK dbg_dump(HWND hwnd, LPARAM lp) {
+    (void)lp;
+    WCHAR cls[64] = {0}, title[256] = {0};
+    DWORD pid = 0;
+    GetClassNameW(hwnd, cls, 63);
+    GetWindowTextW(hwnd, title, 255);
+    GetWindowThreadProcessId(hwnd, &pid);
+    fprintf(stderr, "  win pid=%lu cls=", pid);
+    utf8_print(stderr, cls);
+    fprintf(stderr, " title=");
+    utf8_print(stderr, title);
+    return TRUE;
+}
+
 static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
     WCHAR cls[64] = {0}, title[256] = {0};
     (void)lp;
@@ -225,7 +240,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         EnumWindows(main_enum, 0);
         if (!g_main) Sleep(500);
     }
-    if (!g_main) { fprintf(stderr, "pdgdrive: main window not found\n"); kill_app(); return 3; }
+    if (!g_main) {
+        fprintf(stderr, "pdgdrive: main window not found; visible top-level windows:\n");
+        EnumWindows(dbg_dump, 0);
+        kill_app(); return 3;
+    }
     fprintf(stderr, "pdgdrive: main window %lx\n", (unsigned long)g_main);
 
     /* 2. set the source folder; EN_CHANGE fires the app's scan handler */
