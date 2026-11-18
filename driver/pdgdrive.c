@@ -589,6 +589,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     WCHAR *cl = GetCommandLineW();
     WCHAR src[MAX_PATH] = {0}, pdf[MAX_PATH] = {0}, app[MAX_PATH] = {0};
     WCHAR desk_name[MAX_PATH] = {0};
+    int seed_ini = 1;
     int timeout_sec = 1800;
 
     {
@@ -604,6 +605,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                 wcsncpy(app, argv[++i], MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"--name") && i + 1 < argc)
                 wcsncpy(desk_name, argv[++i], MAX_PATH - 1);
+            else if (!wcscmp(argv[i], L"--noini"))
+                seed_ini = 0;
             else if (!wcscmp(argv[i], L"--timeout") && i + 1 < argc)
                 timeout_sec = _wtoi(argv[++i]);
         }
@@ -647,7 +650,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
 
     /* pre-seed the ini next to the app */
-    {
+    if (seed_ini) {
         WCHAR ini[MAX_PATH] = {0}, dir[MAX_PATH] = {0};
         wcsncpy(dir, app, MAX_PATH - 1);
         WCHAR *b = wcsrchr(dir, L'\\');
