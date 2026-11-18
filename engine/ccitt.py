@@ -193,7 +193,6 @@ def _encode_row(bw: _Bits, ce: list[int], ref: list[int],
     white=0). ref: changing elements of reference line."""
     a0 = -1
     color = 0  # 0 = white
-    run_start = 0
     i = 0  # index into ce
     while True:
         b1, b2 = _ref_ce_after(ref, a0)
@@ -209,18 +208,17 @@ def _encode_row(bw: _Bits, ce: list[int], ref: list[int],
             bw.put(*V[key])
             a0 = a1
             color = 1 - color
-            run_start = a1
             i += 1
         else:
             bw.put(*HORIZ)
-            first = a1 - run_start
+            start = a0 if a0 >= 0 else 0
+            first = a1 - start
             second = a2 - a1
             for code in _run_codes(first, color == 0):
                 bw.put(*code)
             for code in _run_codes(second, color == 1):
                 bw.put(*code)
             a0 = a2
-            run_start = a2
             i += 2
         if a0 >= width:
             break
@@ -316,7 +314,6 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
         ref_new = []
         a0 = -1
         color = 0
-        run_start = 0        # where the current-color run began
         while True:
             m = _read_code(br, _MODES, 7)
             if m is None:
@@ -325,15 +322,18 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
             if kind == "V":
                 b1 = _next_ref_ce(ref, a0)
                 a1 = max(0, min(width, b1 + val))
-                if color and a1 > run_start:
-                    row[run_start:a1] = b"\x01" * (a1 - run_start)
+                if color and a1 > a0:
+                    row[a0:a1] = b"\x01" * (a1 - a0)
                 ref_new.append(a1)
                 a0 = a1
                 color ^= 1
-                run_start = a1
             elif kind == "P":
                 _b1, b2 = _ref_ce_after(ref, a0)
-                a0 = b2 if b2 < (1 << 29) else width
+                if b2 >= (1 << 29):
+                    b2 = width
+                if color and b2 > a0:
+                    row[a0:b2] = b"\x01" * (b2 - a0)
+                a0 = b2
             else:  # H
                 runs = []
                 for c in (color, color ^ 1):
@@ -347,7 +347,7 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
                         if t == "T":
                             break
                     runs.append(total)
-                start = run_start
+                start = a0 if a0 >= 0 else 0
                 a1 = start + runs[0]
                 a2 = a1 + runs[1]
                 if color:
@@ -358,7 +358,6 @@ def decode_g4(data: bytes, width: int, height: int) -> bytes:
                     row[lo:hi] = b"\x01" * (hi - lo)
                 ref_new.extend([min(a1, width), min(a2, width)])
                 a0 = a2
-                run_start = a2
             if a0 >= width:
                 break
         # pack row
