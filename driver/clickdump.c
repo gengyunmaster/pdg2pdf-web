@@ -58,7 +58,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     HWND btn = GetDlgItem(g_main, id);
     printf("clicking id=%d -> hwnd=%lx\n", id, (unsigned long)btn);
     if (!btn) { printf("no such control\n"); return 4; }
-    PostMessageW(btn, BM_CLICK, 0, 0);
+    SendMessageTimeoutW(btn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
     Sleep(2500);
     printf("--- top-level after click ---\n");
     EnumWindows(top_all, 0);
