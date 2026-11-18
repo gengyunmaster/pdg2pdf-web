@@ -27,6 +27,52 @@ TIMEOUT = int(os.environ.get("PDG2PDF_CONVERT_TIMEOUT", "1800"))
 
 
 
+
+
+_IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp"}
+
+
+def _book_root_lenient(extracted: Extraction) -> Path:
+    """Directory that holds the book files (may contain images/pdfs)."""
+    pdgs = find_pdg_files(extracted.extract_dir)
+    files = [p for p in extracted.extract_dir.rglob("*") if p.is_file()]
+    if not files:
+        raise RuntimeError("archive is empty")
+    if pdgs:
+        parents = {p.parent for p in pdgs}
+        if len(parents) == 1:
+            return parents.pop()
+        counts: dict[Path, int] = {}
+        for p in pdgs:
+            counts[p.parent] = counts.get(p.parent, 0) + 1
+        return max(counts, key=counts.get)
+    # no pdg: group everything by parent and pick the majority dir
+    counts = {}
+    for p in files:
+        counts[p.parent] = counts.get(p.parent, 0) + 1
+    return max(counts, key=counts.get)
+
+
+def _prepare_book(book: Path):
+    """Return a Path to a ready-made PDF when the archive already is one;
+    otherwise rename image pages to .pdg (Pdg2Pic reads them natively)."""
+    if find_pdg_files(book):
+        return None
+    pdfs = sorted((p for p in book.rglob("*.pdf") if p.is_file()),
+                  key=lambda p: p.stat().st_size, reverse=True)
+    if pdfs:
+        return pdfs[0]
+    imgs = sorted(p for p in book.rglob("*")
+                  if p.is_file() and p.suffix.lower() in _IMG_EXTS)
+    if imgs:
+        for p in imgs:
+            target = p.with_suffix(".pdg")
+            if not target.exists():
+                p.rename(target)
+        return None
+    raise RuntimeError("no PDG files found in the archive")
+
+
 def _book_root(extracted: Extraction) -> Path:
     """Directory that directly contains the PDG files."""
     pdgs = find_pdg_files(extracted.extract_dir)
@@ -54,6 +100,13 @@ class WinePdg2PicConverter:
         if not DRIVER.exists():
             raise RuntimeError(f"driver not built: {DRIVER} (run 'make -C driver')")
 
+        direct = _prepare_book(_book_root_lenient(extracted))
+        if direct is not None:
+            result = out_dir / "book.pdf"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(direct, result)
+            print(f"[worker] archive already contains a PDF: {direct}", flush=True)
+            return result
         book = _book_root(extracted)
         print(f"[worker] book root: {book}", flush=True)
         stage = out_dir.parent / "wine"
