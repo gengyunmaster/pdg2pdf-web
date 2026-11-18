@@ -55,6 +55,7 @@ class WinePdg2PicConverter:
             raise RuntimeError(f"driver not built: {DRIVER} (run 'make -C driver')")
 
         book = _book_root(extracted)
+        print(f"[worker] book root: {book}", flush=True)
         stage = out_dir.parent / "wine"
         stage.mkdir(parents=True, exist_ok=True)
         exe = stage / "Pdg2Pic.exe"
@@ -80,6 +81,7 @@ class WinePdg2PicConverter:
                 shutil.copyfile(f, staged / f.name)
         # The app writes "<source folder name>.pdf" into the user profile
         # dir; the driver searches both locations and reports the real one.
+        print(f"[worker] staged: {staged}", flush=True)
         env = dict(os.environ)
         env.setdefault("WINEDEBUG", "-1")
         cmd = ["wine", str(driver), "--src", str(staged),
@@ -102,6 +104,7 @@ class WinePdg2PicConverter:
             subprocess_wineserver_kill(env)
             shutil.rmtree(staged, ignore_errors=True)
 
+        print("[worker] driver finished", flush=True)
         text = out.decode("utf-8", "replace") if out else ""
         pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
         if proc.returncode != 0 or not pdf_line:
