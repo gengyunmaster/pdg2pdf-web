@@ -208,7 +208,7 @@ static IDataObjectVtbl do_vtbl = {
     do_DAdvise, do_DUnadvise, do_EnumDAdvise
 };
 
-typedef struct { IDropSource iface; LONG refs; } DropSrc;
+typedef struct { IDropSource iface; LONG refs; int calls; } DropSrc;
 static ULONG STDMETHODCALLTYPE ds_AddRef(IUnknown *self) {
     DropSrc *d = (DropSrc *)self; return InterlockedIncrement(&d->refs);
 }
@@ -225,8 +225,12 @@ static ULONG STDMETHODCALLTYPE ds_Release(IUnknown *self) {
     if (r == 0) free(d); return r;
 }
 static HRESULT STDMETHODCALLTYPE ds_QueryContinueDrag(IDropSource *self, BOOL escape, DWORD keys) {
-    (void)self; (void)escape; (void)keys;
-    return DRAGDROP_S_DROP;   /* drop immediately at the current position */
+    DropSrc *d = (DropSrc *)self;
+    (void)escape; (void)keys;
+    /* first S_OK lets the loop resolve the target under the cursor;
+     * the second call performs the drop */
+    if (d->calls++ == 0) return S_OK;
+    return DRAGDROP_S_DROP;
 }
 static HRESULT STDMETHODCALLTYPE ds_GiveFeedback(IDropSource *self, DWORD effect) {
     (void)self; (void)effect; return (HRESULT)0x80040100L; /* DRAGDROP_S_FIRST: use default cursor */
