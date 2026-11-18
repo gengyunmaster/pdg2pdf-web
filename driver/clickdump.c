@@ -82,17 +82,18 @@ static int drop_dir(HWND target, const WCHAR *dir) {
     return 1;
 }
 
+static HWND s_found = NULL;
+static BOOL CALLBACK map_find(HWND hwnd, LPARAM lp) {
+    WCHAR t[256] = {0};
+    (void)lp;
+    GetWindowTextW(hwnd, t, 255);
+    if (wcsstr(t, L"Pdg2Pic")) { s_found = hwnd; return FALSE; }
+    return TRUE;
+}
+
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     (void)inst; (void)prev; (void)show;
     if (cmdline && strstr(cmdline, "--map")) {
-        static HWND s_found = NULL;
-        static BOOL CALLBACK map_find(HWND hwnd, LPARAM lp) {
-            WCHAR t[256] = {0};
-            (void)lp;
-            GetWindowTextW(hwnd, t, 255);
-            if (wcsstr(t, L"Pdg2Pic")) { s_found = hwnd; return FALSE; }
-            return TRUE;
-        }
         for (int i = 0; i < 60 && !s_found; i++) { EnumWindows(map_find, 0); if (!s_found) Sleep(500); }
         if (!s_found) { fprintf(stderr, "no main\n"); return 3; }
         g_main = s_found;
