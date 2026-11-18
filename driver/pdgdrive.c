@@ -362,9 +362,22 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
     SetWindowTextW(ped, src_win);  /* cosmetic only */
+    /* probe tree state */
+    HWND tree = NULL;
+    struct find_ctx2 tc = { 0, NULL };
+    EnumChildWindows(picker, find_by_class_tree, (LPARAM)&tc);
+    tree = tc.found;
+    HWND ok0 = find_ctrl(picker, PICKER_OK_ID);
+    fprintf(stderr, "pdgdrive: tree=%lx count=%ld ok=%lx enabled=%d\n",
+            (unsigned long)tree,
+            tree ? (long)SendMessageW(tree, TVM_GETCOUNT, 0, 0) : -1,
+            (unsigned long)ok0, ok0 && IsWindowEnabled(ok0));
     /* select our folder in the tree (documented BFFM_SETSELECTION) */
     SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)src_win);
     Sleep(2500);
+    fprintf(stderr, "pdgdrive: after BFFM ok enabled=%d count=%ld\n",
+            ok0 && IsWindowEnabled(ok0),
+            tree ? (long)SendMessageW(tree, TVM_GETCOUNT, 0, 0) : -1);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
     SendMessageTimeoutW(ok, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 5000, NULL);
