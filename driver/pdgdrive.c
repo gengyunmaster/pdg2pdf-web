@@ -23,7 +23,7 @@
 #define SRC_EDIT_ID   1066   /* 0x42a  source folder edit                */
 #define FILE_LIST_ID  1006   /* 0x3ee  SysListView32                     */
 #define START_BTN_ID  1      /* IDOK, the on-screen "4 开始转换" button  */
-#define SRC_BROWSE_ID   1004 /* 0x3ec  opens the folder picker             */
+#define SRC_BROWSE_ID   1000 /* 0x3e8  source folder browse (icon button next to step 1) */
 #define PICKER_OK_ID    1    /* picker's 确定 button                      */
 
 static DWORD g_app_pid = 0;
