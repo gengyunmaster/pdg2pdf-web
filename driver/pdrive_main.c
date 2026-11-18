@@ -859,6 +859,19 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
             long sz = file_size(found);
             if (sz >= 0 && sz == last_size) {
                 if (++stable >= 3) {
+                    /* copy the PDF next to our own executable (the
+                     * per-job staging dir) so the worker can collect it
+                     * even if the original location is unreliable */
+                    WCHAR me[MAX_PATH] = {0}, copyto[MAX_PATH] = {0};
+                    GetModuleFileNameW(NULL, me, MAX_PATH - 1);
+                    WCHAR *bs = wcsrchr(me, L'\\');
+                    if (bs) *bs = 0;
+                    _snwprintf(copyto, MAX_PATH - 1, L"%s\\result.pdf", me);
+                    if (CopyFileW(found, copyto, FALSE)) {
+                        fprintf(stdout, "COLLECT=result.pdf\n");
+                        kill_app();
+                        return 0;
+                    }
                     fprintf(stdout, "PDF="); utf8_print(stdout, found);
                     kill_app();
                     return 0;

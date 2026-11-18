@@ -112,7 +112,11 @@ class WinePdg2PicConverter:
             raise RuntimeError(
                 f"pdgdrive failed (rc={proc.returncode}): {tail_txt}"
             )
-        pdf = _locate_pdf(wine_path_to_unix(pdf_line[4:]), staged)
+        collect = stage / "result.pdf"
+        if collect.exists():
+            pdf = collect
+        else:
+            pdf = _locate_pdf(wine_path_to_unix(pdf_line[4:]), staged)
         result = out_dir / "result.pdf"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(pdf, result)
