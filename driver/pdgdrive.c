@@ -133,6 +133,21 @@ static BOOL CALLBACK dbg_dump(HWND hwnd, LPARAM lp) {
 }
 
 
+
+/* Wine exposes the container filesystem under drive Z:. Convert a Unix
+ * path (/srv/data/x) to what a Windows program understands (Z:\srv\data\x). */
+static void unix_to_win(const WCHAR *in, WCHAR *out, size_t cap) {
+    size_t o = 0;
+    if (in[0] == L'/' && cap > 4) {
+        out[o++] = L'Z'; out[o++] = L':';
+    }
+    for (size_t i = 0; in[i] && o + 1 < cap; i++) {
+        WCHAR c = in[i];
+        out[o++] = (c == L'/') ? L'\\' : c;
+    }
+    out[o] = 0;
+}
+
 struct find_ctx2 { UINT id; HWND found; };
 
 static BOOL CALLBACK find_edit(HWND hwnd, LPARAM lp) {
@@ -184,7 +199,7 @@ static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
 
 static int find_pdf(const WCHAR *watch, WCHAR *out, size_t cap) {
     WCHAR pat[MAX_PATH];
-    _snwprintf(pat, MAX_PATH - 1, L"%s\\*.pdf", watch);
+    _snwprintf(pat, MAX_PATH - 1, L"%s\\*.pdf", watch_win);
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW(pat, &fd);
     if (h == INVALID_HANDLE_VALUE) return 0;
@@ -247,6 +262,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                         "[--timeout <sec>] [--app Pdg2Pic.exe]\n");
         return 2;
     }
+    WCHAR src_win[MAX_PATH] = {0}, watch_win[MAX_PATH] = {0};
+    unix_to_win(src, src_win, MAX_PATH);
+    unix_to_win(watch, watch_win, MAX_PATH);
+    fprintf(stderr, "pdgdrive: src=%ls watch=%ls\n", src_win, watch_win);
 
     /* 0. launch Pdg2Pic.exe (hidden) from the driver's own directory */
     if (!app[0]) {
@@ -341,9 +360,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         kill_app(); return 3;
     }
     fprintf(stderr, "pdgdrive: picker %lx\n", (unsigned long)picker);
-    SetWindowTextW(ped, src);  /* cosmetic only; the edit is for new folders */
+    SetWindowTextW(ped, src_win);  /* cosmetic only */
     /* select our folder in the tree (documented BFFM_SETSELECTION) */
-    SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)src);
+    SendMessageW(picker, WM_USER + 102, TRUE, (LPARAM)src_win);
     Sleep(2500);
     HWND ok = find_ctrl(picker, PICKER_OK_ID);
     if (!ok) { fprintf(stderr, "pdgdrive: picker OK missing\n"); kill_app(); return 3; }
@@ -360,7 +379,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     fprintf(stderr, "pdgdrive: file list items=%d\n", items);
 
     /* 4. make sure the source edit carries our path, then start */
-    SetDlgItemTextW(g_main, SRC_EDIT_ID, src);
+    SetDlgItemTextW(g_main, SRC_EDIT_ID, src_win);
     HWND edit2 = GetDlgItem(g_main, SRC_EDIT_ID);
     SendMessageW(g_main, WM_COMMAND,
                  MAKEWPARAM(SRC_EDIT_ID, EN_KILLFOCUS), (LPARAM)edit2);
