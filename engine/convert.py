@@ -6,14 +6,15 @@ UnsupportedPayload so the caller can fall back to the wrapper backend.
 """
 from __future__ import annotations
 
+import os
 import struct
 import sys
 import zlib
 from pathlib import Path
 
 from .imgdec import UnsupportedImage, jpeg_info, png_decode
-from .pdfdoc import Page, TextPage, write_pdf
-from .pdgspec import list_pages, sniff_file
+from .pdfdoc import OutlineEntry, Page, TextPage, write_pdf
+from .pdgspec import default_bookmarks, list_pages, sniff_file
 
 
 class UnsupportedPayload(Exception):
@@ -54,6 +55,12 @@ def _load_page(path: Path) -> Page:
                     _strip_app14(data), "/DCTDecode")
     if kind == "png":
         w, h, dpi, cs, bits, raw = png_decode(data)
+        if bits == 1:
+            from .ccitt import encode_g4  # noqa: PLC0415
+            g4 = encode_g4(raw, w, h)
+            parms = f"<< /K -1 /Columns {w} /Rows {h} >>"
+            return Page(w, h, dpi, cs, 1, g4, "/CCITTFaxDecode",
+                        decode_parms=parms)
         return Page(w, h, dpi, cs, bits, zlib.compress(raw), "/FlateDecode")
     raise UnsupportedPayload(path, kind)
 
@@ -93,23 +100,35 @@ def _bookinfo_lines(src_dir: Path) -> list[str]:
             except OSError:
                 return []
             lines = [l.strip() for l in text.replace("\r", "").split("\n")]
-            return [l for l in lines if l and not l.startswith("[")]
+            return [l for l in lines if l]
     return []
 
 
-def convert_book(src_dir: Path, out_pdf: Path) -> int:
+def convert_book(src_dir: Path, out_pdf: Path,
+                 ocr: bool | None = None) -> int:
+    if ocr is None:
+        ocr = os.environ.get("PDG2PDF_OCR", "") == "1"
     pages_src = list_pages(src_dir)
     if not pages_src:
         raise UnsupportedPayload(src_dir, None)
     pages: list[Page] = []
     for p in pages_src:
-        pages.append(_load_page(p))
+        pg = _load_page(p)
+        if ocr:
+            from .ocr import ocr_page  # noqa: PLC0415
+            layer = ocr_page(pg)
+            if layer:
+                pg.extra_content = layer
+        pages.append(pg)
     _normalize_width(pages)
     info = _bookinfo_lines(src_dir)
-    if info:
-        pages.append(TextPage(info))
+    if info and pages:
+        pages.append(TextPage(info, width_pt=pages[0].width_px * 72.0 / pages[0].dpi,
+                              height_pt=pages[0].height_px * 72.0 / pages[0].dpi))
+    outlines = [OutlineEntry(title, idx)
+                for title, idx in default_bookmarks([p.name for p in pages_src])]
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    out_pdf.write_bytes(write_pdf(pages))
+    out_pdf.write_bytes(write_pdf(pages, outlines=outlines))
     return len(pages)
 
 

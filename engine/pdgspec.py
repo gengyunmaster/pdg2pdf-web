@@ -57,4 +57,58 @@ def is_page_file(path: Path) -> bool:
 def list_pages(root: Path) -> list[Path]:
     pages = [p for p in root.rglob("*") if is_page_file(p)]
     pages.sort(key=lambda p: sort_key(p.name))
+    # the reference tool moves cov002 to the end as the back cover when
+    # the book has cov001+cov002, no cov003 and no bacXXX page
+    stems = {p.stem.lower() for p in pages}
+    if (any(s.startswith("cov001") for s in stems)
+            and any(s.startswith("cov002") for s in stems)
+            and not any(s.startswith("cov003") for s in stems)
+            and not any(s.startswith("bac") for s in stems)):
+        cov2 = [p for p in pages if p.stem.lower().startswith("cov002")]
+        pages = [p for p in pages if not p.stem.lower().startswith("cov002")]
+        pages.extend(cov2)
     return pages
+
+
+_SECTIONS = {"cov": "封面", "bok": "书名页", "leg": "版权",
+             "fow": "前言", "!": "目录", "app": "附录", "bac": "封底"}
+# bookmark emission order differs from page reading order
+_BKMARK_RANK = {"cov": 0, "bok": 1, "leg": 2, "fow": 3, "!": 4}
+
+
+def classify(name: str) -> tuple[str, int]:
+    """(prefix, number): 'cov',12 / 'bok',1 / '!',5 / 'body',273 ..."""
+    stem = Path(name).stem.lower()
+    for prefix in ("cov", "bok", "leg", "fow", "app", "bac"):
+        if stem.startswith(prefix):
+            rest = stem[len(prefix):]
+            return prefix, int(rest) if rest.isdigit() else 0
+    if stem.startswith("!"):
+        rest = stem[1:]
+        return "!", int(rest) if rest.isdigit() else 0
+    m = re.match(r"^(\d+)", stem)
+    if m:
+        return "body", int(m.group(1))
+    return "other", 0
+
+
+def default_bookmarks(names: list[str]) -> list[tuple[str, int]]:
+    """Flat (title, page_index) bookmarks matching the reference tool's
+    no-bookcontents behavior: first page of each named section plus one
+    per body page (titled by printed page number)."""
+    classes = [classify(n) for n in names]
+    out: list[tuple[int, str, int]] = []   # (role_rank, title, page_index)
+    seen: set[str] = set()
+    for i, (prefix, _num) in enumerate(classes):
+        if prefix in _BKMARK_RANK and prefix not in seen:
+            out.append((_BKMARK_RANK[prefix], _SECTIONS[prefix], i))
+            seen.add(prefix)
+    for i, (prefix, num) in enumerate(classes):
+        if prefix == "body":
+            out.append((5, str(num), i))
+    bac_idx = next((i for i, (p, _n) in enumerate(classes) if p == "bac"),
+                   None)
+    out.append((7, _SECTIONS["bac"], bac_idx if bac_idx is not None
+                else len(classes) - 1))
+    out.sort(key=lambda t: (t[0], t[2]))
+    return [(title, idx) for _rank, title, idx in out]
