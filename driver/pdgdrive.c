@@ -50,6 +50,7 @@ static const WCHAR TXT_ERR4[] = {0x6ca1,0x6709,0};      /* 没有 */
 static DWORD g_app_pid = 0;
 static HWND  g_main = NULL;
 static PROCESS_INFORMATION g_pi = {0};
+static WCHAR g_watch_win[MAX_PATH] = {0};
 
 static void kill_app(void) {
     if (g_pi.hProcess) {
@@ -199,7 +200,7 @@ static BOOL CALLBACK main_enum(HWND hwnd, LPARAM lp) {
 
 static int find_pdf(const WCHAR *watch, WCHAR *out, size_t cap) {
     WCHAR pat[MAX_PATH];
-    _snwprintf(pat, MAX_PATH - 1, L"%s\\*.pdf", watch_win);
+    _snwprintf(pat, MAX_PATH - 1, L"%s\\*.pdf", g_watch_win);
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW(pat, &fd);
     if (h == INVALID_HANDLE_VALUE) return 0;
@@ -262,9 +263,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
                         "[--timeout <sec>] [--app Pdg2Pic.exe]\n");
         return 2;
     }
-    WCHAR src_win[MAX_PATH] = {0}, watch_win[MAX_PATH] = {0};
+    WCHAR src_win[MAX_PATH] = {0};
     unix_to_win(src, src_win, MAX_PATH);
-    unix_to_win(watch, watch_win, MAX_PATH);
+    unix_to_win(watch, g_watch_win, MAX_PATH);
     fprintf(stderr, "pdgdrive: src=%ls watch=%ls\n", src_win, watch_win);
 
     /* 0. launch Pdg2Pic.exe (hidden) from the driver's own directory */
