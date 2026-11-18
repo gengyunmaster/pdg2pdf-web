@@ -822,6 +822,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     WCHAR profile_dir[MAX_PATH] = {0};
     if (FAILED(SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, profile_dir)))
         profile_dir[0] = 0;
+    fprintf(stderr, "pdgdrive: watch=%ls profile=%ls\n",
+            g_watch_dir, profile_dir);
 
     /* wait for the PDF; handle popups */
     DWORD start = GetTickCount();
