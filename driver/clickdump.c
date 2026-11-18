@@ -17,7 +17,7 @@ static void dump_one(HWND hwnd) {
     printf("hwnd=%08lx id=%04x vis=%d area=%ld cls=%-24s title=%ls pid=%lu\n",
            (unsigned long)hwnd, (unsigned)GetDlgCtrlID(hwnd),
            IsWindowVisible(hwnd) ? 1 : 0,
-           (long)((rc.right - rc.width) * 0 + (rc.right - rc.left) * (rc.bottom - rc.top)),
+           (long)((rc.right - rc.left) * (rc.bottom - rc.top)),
            cls, title, pid);
 }
 
