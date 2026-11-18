@@ -822,8 +822,18 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     WCHAR profile_dir[MAX_PATH] = {0};
     if (FAILED(SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, profile_dir)))
         profile_dir[0] = 0;
-    fprintf(stderr, "pdgdrive: watch=%ls profile=%ls\n",
-            g_watch_dir, profile_dir);
+    WCHAR home_win[MAX_PATH] = {0};
+    {
+        char home_a[MAX_PATH] = {0};
+        DWORD hl = GetEnvironmentVariableA("HOME", home_a, MAX_PATH - 1);
+        if (hl > 0 && hl < MAX_PATH) {
+            WCHAR home_u[MAX_PATH] = {0};
+            MultiByteToWideChar(CP_UTF8, 0, home_a, -1, home_u, MAX_PATH - 1);
+            unix_to_win(home_u, home_win, MAX_PATH);
+        }
+    }
+    fprintf(stderr, "pdgdrive: watch=%ls profile=%ls home=%ls\n",
+            g_watch_dir, profile_dir, home_win);
 
     /* wait for the PDF; handle popups */
     DWORD start = GetTickCount();
@@ -844,6 +854,8 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
         int got = find_pdf(g_watch_dir, found, MAX_PATH);
         if (!got && profile_dir[0])
             got = find_pdf(profile_dir, found, MAX_PATH);
+        if (!got && home_win[0])
+            got = find_pdf(home_win, found, MAX_PATH);
         if (got) {
             long sz = file_size(found);
             if (sz >= 0 && sz == last_size) {
