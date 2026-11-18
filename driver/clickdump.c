@@ -177,8 +177,14 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     HWND btn = GetDlgItem(g_main, id);
     printf("clicking id=%d -> hwnd=%lx enabled=%d\n", id,
            (unsigned long)btn, btn ? IsWindowEnabled(btn) : -1);
-    if (!btn) { printf("no such control\n"); return 4; }
-    PostMessageW(btn, BM_CLICK, 0, 0);
+    if (!btn) {
+        /* not a child window id: assume a toolbar command */
+        printf("no child; sending WM_COMMAND %d to main\n", id);
+        SendMessageTimeoutW(g_main, WM_COMMAND, (WPARAM)id, 0,
+                            SMTO_ABORTIFHUNG, 5000, NULL);
+    } else {
+        PostMessageW(btn, BM_CLICK, 0, 0);
+    }
     Sleep(2500);
     printf("--- top-level after click ---\n");
     EnumWindows(top_all, 0);
