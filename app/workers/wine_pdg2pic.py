@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import uuid
 from pathlib import Path
 
 from ..archives import Extraction, find_pdg_files
@@ -25,10 +24,6 @@ from ..config import PDG2PIC_EXE
 DRIVER = Path(__file__).resolve().parents[2] / "driver" / "pdgdrive.exe"
 TIMEOUT = int(os.environ.get("PDG2PDF_CONVERT_TIMEOUT", "1800"))
 
-
-
-def env_wineprefix() -> str:
-    return os.environ.get("WINEPREFIX", str(Path.home() / ".wine"))
 
 
 def _book_root(extracted: Extraction) -> Path:
@@ -67,27 +62,13 @@ class WinePdg2PicConverter:
         driver = stage / "pdgdrive.exe"
         shutil.copyfile(DRIVER, driver)
 
-        # Stage the book as a REAL directory on the Wine desktop (hardlinks
-        # are free): Wine's folder picker cannot return paths through
-        # symlinks, and its drive view does not enumerate deep folders.
-        link_name = f"pdgbook_{uuid.uuid4().hex[:8]}"
-        desk = Path(env_wineprefix()) / "drive_c/users/root/Desktop"
-        desk.mkdir(parents=True, exist_ok=True)
-        staged = desk / link_name
-        staged.mkdir()
-        for f in src.iterdir():
-            if not f.is_file():
-                continue
-            try:
-                os.link(f, staged / f.name)
-            except OSError:
-                shutil.copyfile(f, staged / f.name)
-        src = staged  # the app works on (and writes the PDF into) this dir
-
+        # The driver pre-seeds Pdg2Pic.ini (PARA_DIR_SRC/PARA_DIR_TGT) and
+        # clicks the start button; the app restores its state from the ini.
+        pdf_path = src / "book.pdf"
         env = dict(os.environ)
         env.setdefault("WINEDEBUG", "-1")
-        cmd = ["wine", str(driver), "--src", str(src), "--watch", str(src),
-               "--name", link_name, "--timeout", str(TIMEOUT)]
+        cmd = ["wine", str(driver), "--src", str(src), "--pdf", str(pdf_path),
+               "--timeout", str(TIMEOUT)]
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -102,7 +83,6 @@ class WinePdg2PicConverter:
                 raise RuntimeError("conversion timed out")
         finally:
             subprocess_wineserver_kill(env)
-            shutil.rmtree(staged, ignore_errors=True)
 
         text = out.decode("utf-8", "replace") if out else ""
         pdf_line = next((l for l in text.splitlines() if l.startswith("PDF=")), None)
