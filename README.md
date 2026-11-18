@@ -6,22 +6,31 @@ Linux Docker container.
 
 ## Status
 
-Phase A functional: the full pipeline (upload archive -> extract -> drive
-Pdg2Pic under Wine -> download PDF) works end-to-end. The automation relies
-on discoveries from live UI reconnaissance under Wine:
+**Phase B (self-developed engine) is the default.** Two backends exist:
 
-- source selection: the app only accepts a source folder via its own folder
-  picker (button `1000`) — the driver walks the picker's tree to a staging
-  directory planted on the Wine desktop (Wine pickers cannot resolve
-  symlinks or enumerate drive contents, hence the real directory there);
-- the auto-statistics modal dialog is auto-dismissed;
-- `Pdg2Pic.ini` pre-seeding (UTF-16 `[ParaBlock]`, `PARA_TGT_TYPE=1`,
-  `PARA_AUTO_CHK=0`, `PARA_PREVIEW=0`) puts the app into direct-PDF mode;
-- the produced PDF is searched in the target directory and the Wine user
-  profile directory (the app writes `<source folder name>.pdf` there).
+- `native` — a pure-stdlib engine (`engine/`, spec in `docs/FORMAT.md`):
+  payload sniffing, PDG reading order, JPEG pass-through (byte-identical to
+  the reference but for the Adobe APP14 segment), PNG decoding (8-bit gray,
+  RGB, 1-bit packed, palette), uniform page width, BookInfo appendix page.
+  On the 28-book calibration corpus it reaches full page/box parity with
+  the reference outputs and ~100% image-stream parity on JPEG books.
+- `wine_pdg2pic` — the Phase A wrapper (Win32 message-level driver for the
+  original freeware under Wine/Xvfb), kept as the fallback for the
+  encrypted V2 'HH' container family (~6% of corpus pages; see
+  `docs/FORMAT.md` section 6b for the recovered structure and the RE
+  entry points).
 
-Known limitations: OCR (double-layer PDF) is unsupported (MODI is
-Windows-only); encrypted PDG is unsupported (as in the original).
+The default `auto` backend runs native first and falls back per-book.
+Set `PDG2PDF_CONVERTER=native|wine_pdg2pic|echo` to force one.
+
+Differential testing: `python3 -m scripts.diff_corpus <inbox> <oracle_dir>
+<map.json>` compares engine output against reference PDFs page-by-page
+(page counts, boxes, image-stream bytes with APP14 normalization).
+
+Known limitations: OCR (double-layer PDF) unsupported; the encrypted V2
+container family needs decoder reverse engineering (documented entry
+points in FORMAT.md); DjVu/JPEG2000 payloads are not in the calibration
+corpus and raise UnsupportedPayload (they then fall back to Wine).
 
 ## How it works
 
@@ -106,8 +115,12 @@ python3 -m unittest discover -s tests
 - [x] Project skeleton: FastAPI app, job queue, archive extraction (zip/rar/7z/uvz with password list)
 - [x] Phase A: Wine wrapper backend (`wine_pdg2pic`) + Win32 driver + Dockerfile
 - [x] End-to-end smoke test (`scripts/e2e_test.sh`)
-- [ ] Web UI polish, job retention/cleanup
-- [ ] Phase B: self-developed engine (`FORMAT.md`, pure open-source stack), worker swap
+- [x] Web UI polish (drag&drop, inline errors, per-job metadata)
+- [x] Phase B: self-developed engine + `auto` backend (native first, Wine fallback)
+- [x] Differential corpus testing (`scripts/diff_corpus.py`)
+- [ ] Encrypted V2 container decryption (reverse engineering; entry points documented)
+- [ ] DjVu / JPEG2000 payload support (no samples in the current corpus)
+- [ ] Job retention/cleanup, OCR via Tesseract
 - [ ] Release
 
 ## License
