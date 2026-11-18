@@ -254,15 +254,21 @@ static int pick_path_in_tree(HWND tree, const WCHAR *winpath) {
         const WCHAR *comp = comps[i];
         HTREEITEM next = find_child_by_text(tree, cur, comp);
         if (!next && i == 0 && comp[1] == L':') {
-            /* drives live under My Computer */
-            static const WCHAR MC[] = {0x6211,0x7684,0x7535,0x8111,0}; /* 我的电脑 */
-            HTREEITEM mc = find_child_by_text(tree, NULL, MC);
-            if (!mc) mc = find_child_by_text(tree, NULL, L"My Computer");
-            if (mc) {
-                SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)mc);
-                Sleep(300);
-                cur = mc;
-                next = find_child_by_text(tree, cur, comp);
+            /* namespace: Desktop -> My Computer -> drives */
+            static const WCHAR MC_ZH[] = {0x6211,0x7684,0x7535,0x8111,0}; /* 我的电脑 */
+            HTREEITEM desk = cur ? cur
+                : (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+            if (desk) {
+                SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)desk);
+                Sleep(400);
+                HTREEITEM mc = find_child_by_text(tree, desk, L"My Computer");
+                if (!mc) mc = find_child_by_text(tree, desk, MC_ZH);
+                if (mc) {
+                    SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)mc);
+                    Sleep(400);
+                    cur = mc;
+                    next = find_child_by_text(tree, cur, comp);
+                }
             }
         }
         if (!next) {
