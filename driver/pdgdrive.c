@@ -221,7 +221,7 @@ static HRESULT STDMETHODCALLTYPE ds_QueryContinueDrag(IDropSource *self, BOOL es
     return DRAGDROP_S_DROP;   /* drop immediately at the current position */
 }
 static HRESULT STDMETHODCALLTYPE ds_GiveFeedback(IDropSource *self, DWORD effect) {
-    (void)self; (void)effect; return DRAGDROP_S_DEFAULT;
+    (void)self; (void)effect; return (HRESULT)0x80040100L; /* DRAGDROP_S_FIRST: use default cursor */
 }
 static IDropSourceVtbl ds_vtbl = {
     ds_QueryInterface, ds_AddRef, ds_Release,
