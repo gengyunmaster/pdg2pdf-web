@@ -20,6 +20,22 @@ from .jobs import Job, load, save
 from .workers import get_converter
 
 
+def recover_pending(job_dir: Path = JOB_DIR) -> list[str]:
+    """Jobs left queued/running by a previous shutdown (container restart,
+    crash) are reset to queued and returned for re-enqueueing."""
+    ids: list[str] = []
+    for jf in sorted(job_dir.glob("*.json")):
+        try:
+            job = load(job_dir, jf.stem)
+        except Exception:
+            continue
+        if job.status in ("queued", "running"):
+            job.status = "queued"
+            save(job_dir, job)
+            ids.append(job.id)
+    return ids
+
+
 class JobRunner:
     def __init__(self, backend: str = CONVERTER_BACKEND) -> None:
         self.backend = backend
@@ -28,6 +44,8 @@ class JobRunner:
 
     async def start(self) -> None:
         ensure_dirs()
+        for job_id in recover_pending():
+            self._queue.put_nowait(job_id)
         self._task = asyncio.create_task(self._loop(), name="job-runner")
 
     async def _loop(self) -> None:
