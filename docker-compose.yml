@@ -1,6 +1,8 @@
 services:
   pdg2pdf:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
     volumes:
@@ -8,7 +10,7 @@ services:
       # Optional: mount a custom archive password list (overrides the bundled one)
       # - ./my-wordlist.txt:/srv/vendor/passwords.txt:ro
     environment:
-      PDG2PDF_CONVERTER: wine_pdg2pic
+      PDG2PDF_CONVERTER: auto
       PDG2PIC_EXE: /srv/vendor/Pdg2Pic.exe
       # PDG2PDF_PASSWORD_LIST: /srv/vendor/passwords.txt
     restart: unless-stopped
