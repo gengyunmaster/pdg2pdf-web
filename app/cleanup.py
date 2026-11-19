@@ -65,11 +65,23 @@ def cleanup_once(
         except OSError:
             pass
 
-    # 2. orphan sweep: any leftover file older than the horizon
+    # 2. orphan sweep: leftover files older than the horizon, except files
+    # still referenced by queued/running jobs (their uploads are needed
+    # when the job eventually starts)
+    live = set()
+    for jf in job_dir.glob("*.json"):
+        try:
+            job = json.loads(jf.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if job.get("status") in ("queued", "running"):
+            live.add(job.get("meta", {}).get("stored", job.get("filename")))
+            live.add(f"{job['id']}.pdf")
     for d in (upload_dir, result_dir):
         for f in d.glob("*"):
             try:
-                if f.is_file() and now - f.stat().st_mtime > horizon:
+                if (f.is_file() and f.name not in live
+                        and now - f.stat().st_mtime > horizon):
                     f.unlink()
                     deleted += 1
             except OSError:
