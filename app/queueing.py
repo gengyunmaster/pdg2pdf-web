@@ -50,8 +50,9 @@ class JobRunner:
             src = UPLOAD_DIR / job.filename
             passwords = load_passwords(PASSWORD_LIST_FILE)
             extracted = extract_any(src, work / "book", passwords)
+            ocr = bool(job.meta.get("ocr")) or None
             pdf = await get_converter(self.backend).convert(
-                extracted, work / "out"
+                extracted, work / "out", ocr=ocr
             )
             result = RESULT_DIR / f"{job.id}.pdf"
             shutil.copyfile(pdf, result)
@@ -62,6 +63,7 @@ class JobRunner:
                 "archive_password_used": extracted.password is not None,
                 "extracted_files": extracted.file_count,
                 "backend": self.backend,
+                "ocr": bool(job.meta.get("ocr")),
             }
         except Exception as exc:  # noqa: BLE001 - report any failure to the UI
             job.status = "error"

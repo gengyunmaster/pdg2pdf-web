@@ -34,7 +34,8 @@ def _build_blank_pdf() -> bytes:
 class EchoConverter:
     name = "echo"
 
-    async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
+    async def convert(self, extracted: Extraction, out_dir: Path,
+                      ocr: bool = False) -> Path:
         pdg = find_pdg_files(extracted.extract_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         pdf = out_dir / "result.pdf"

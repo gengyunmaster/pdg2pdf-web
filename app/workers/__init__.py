@@ -13,12 +13,14 @@ class AutoConverter:
     """Native engine first; books it cannot handle go to the Wine wrapper."""
     name = "auto"
 
-    async def convert(self, extracted, out_dir):
+    async def convert(self, extracted, out_dir, ocr: bool = False):
         from ..workers_support import FallbackToWine  # noqa: PLC0415
         try:
-            return await NativeEngineConverter().convert(extracted, out_dir)
+            return await NativeEngineConverter().convert(
+                extracted, out_dir, ocr=ocr)
         except FallbackToWine:
-            return await WinePdg2PicConverter().convert(extracted, out_dir)
+            return await WinePdg2PicConverter().convert(
+                extracted, out_dir, ocr=ocr)
 
 
 _BACKENDS = {c.name: c for c in (

@@ -91,7 +91,8 @@ def _book_root(extracted: Extraction) -> Path:
 class WinePdg2PicConverter:
     name = "wine_pdg2pic"
 
-    async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
+    async def convert(self, extracted: Extraction, out_dir: Path,
+                      ocr: bool = False) -> Path:
         if not PDG2PIC_EXE.exists():
             raise RuntimeError(
                 f"Pdg2Pic.exe not found at {PDG2PIC_EXE}. Obtain it from the "

@@ -23,9 +23,10 @@ async def startup() -> None:
 
 
 @app.post("/api/jobs")
-async def create_job(file: UploadFile) -> dict:
+async def create_job(file: UploadFile, ocr: str | None = None) -> dict:
     name = _SAFE_NAME.sub("_", Path(file.filename or "upload.bin").name)
     job = Job.new(name)
+    job.meta = {"ocr": ocr == "1"}
     save(JOB_DIR, job)
 
     dest = UPLOAD_DIR / job.filename

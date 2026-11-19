@@ -10,7 +10,8 @@ from ..workers_support import book_root_or_raise
 class NativeEngineConverter:
     name = "native"
 
-    async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
+    async def convert(self, extracted: Extraction, out_dir: Path,
+                      ocr: bool = False) -> Path:
         import sys  # noqa: PLC0415
 
         root = str(Path(__file__).resolve().parents[2])
@@ -30,7 +31,7 @@ class NativeEngineConverter:
             raise FallbackToWine(book)
         result = out_dir / "book.pdf"
         try:
-            convert_book(book, result)
+            convert_book(book, result, ocr=ocr or None)
         except UnsupportedPayload as exc:
             raise FallbackToWine(book) from exc
         return result

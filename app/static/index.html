@@ -30,6 +30,9 @@
   <div id="drop">Drag &amp; drop an archive here, or
     <input type="file" id="file" accept=".zip,.rar,.7z,.uvz,application/zip,application/x-rar-compressed,application/x-7z-compressed">
   </div>
+  <p>
+    <label class="hint"><input type="checkbox" id="ocr"> OCR text layer (slower, adds selectable/searchable text)</label>
+  </p>
   <p><button id="upload">Convert</button> <span id="msg" class="hint"></span></p>
 </div>
 
@@ -55,7 +58,7 @@ async function refresh() {
   const res = await fetch('/api/jobs');
   const data = await res.json();
   document.getElementById('rows').innerHTML = data.jobs.map(j => {
-    const meta = j.meta ? `<div class="meta">${j.meta.archive_format || ''} · ${j.meta.extracted_files || 0} files${j.meta.archive_password_used ? ' · password used' : ''} · via ${j.meta.backend || ''}</div>` : '';
+    const meta = j.meta ? `<div class="meta">${j.meta.archive_format || ''} · ${j.meta.extracted_files || 0} files${j.meta.archive_password_used ? ' · password used' : ''} · via ${j.meta.backend || ''}${j.meta.ocr ? ' · OCR' : ''}</div>` : '';
     const err = j.error ? `<div class="errtext">${j.error}</div>` : '';
     const link = j.status === 'done' ? `<a href="/api/jobs/${j.id}/download">Download PDF</a>` : '';
     return `<tr>
@@ -73,6 +76,7 @@ async function upload() {
   msg('uploading ' + f.name + ' ...');
   const fd = new FormData();
   fd.append('file', f);
+  if (document.getElementById('ocr').checked) fd.append('ocr', '1');
   const res = await fetch('/api/jobs', { method: 'POST', body: fd });
   if (!res.ok) { msg('upload failed: ' + await res.text()); return; }
   msg('queued.');

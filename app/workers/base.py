@@ -15,6 +15,8 @@ from ..archives import Extraction
 class Converter(Protocol):
     name: str
 
-    async def convert(self, extracted: Extraction, out_dir: Path) -> Path:
-        """Produce a PDF at out_dir and return its path. Raise on failure."""
+    async def convert(self, extracted: Extraction, out_dir: Path,
+                      ocr: bool = False) -> Path:
+        """Produce a PDF at out_dir and return its path. Raise on failure.
+        `ocr` requests a hidden searchable text layer when supported."""
         ...
