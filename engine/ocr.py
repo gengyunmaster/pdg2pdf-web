@@ -54,8 +54,10 @@ def _tsv_words(tsv: str, w_px: int, h_px: int, w_pt: float,
         if len(f) < 12 or f[0] != "5" or not f[11].strip():
             continue
         try:
-            left, top, width, height = (int(f[7]), int(f[8]),
-                                        int(f[9]), int(f[10]))
+            # TSV columns: 0 level,1 page,2 block,3 par,4 line,5 word,
+            # 6 left, 7 top, 8 width, 9 height, 10 conf, 11 text
+            left, top, width, height = (int(f[6]), int(f[7]),
+                                        int(f[8]), int(f[9]))
         except ValueError:
             continue
         out.append(Word(left * sx,
