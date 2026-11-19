@@ -1,6 +1,7 @@
 """Minimal image-only PDF writer with a plain-text appendix page (stdlib)."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
@@ -104,7 +105,7 @@ def write_pdf(pages: list[Page | TextPage],
     )
     cjk_font_id = add(
         b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light "
-        b"/Encoding /UniGB-UCS2-H /DescendantFonts ["
+        b"/Encoding /" + os.environ.get("PDG_CJK_ENC", "UniGB-UCS2-H").encode() + b" /DescendantFonts ["
         + f"{cjk_desc} 0 R".encode()
         + f"] /ToUnicode {touni} 0 R >>".encode()
     )
@@ -135,7 +136,9 @@ def write_pdf(pages: list[Page | TextPage],
         )
         w_pt = pg.width_px * 72.0 / pg.dpi
         h_pt = pg.height_px * 72.0 / pg.dpi
-        content = (f"{w_pt:.2f} 0 0 {h_pt:.2f} 0 0 cm /Im0 Do\n".encode()
+        content = (b"q\n"
+                   + f"{w_pt:.2f} 0 0 {h_pt:.2f} 0 0 cm /Im0 Do\n".encode()
+                   + b"Q\n"
                    + (pg.extra_content or b""))
         resources = (f"/Resources << /XObject << /Im0 {img} 0 R >> ".encode()
                      + (b"/Font << /F1 " + f"{cjk_font_id} 0 R".encode()
