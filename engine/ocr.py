@@ -99,9 +99,9 @@ def ocr_page(page: Page, langs: str = "chi_sim+eng") -> bytes | None:
         return None
     if not words:
         return None
-    parts = ["BT", "/F1 10 Tf", "3 Tr"]
+    parts = [b"BT", b"/F1 10 Tf", b"3 Tr"]
     for wd in words:
-        parts.append(f"1 0 0 1 {wd.x:.1f} {wd.y:.1f} Tm {wd.size:.1f} Tf "
-                     f"({_escape_gbk(wd.text)}) Tj")
-    parts.append("ET")
-    return "\n".join(parts).encode("latin-1")
+        head = f"1 0 0 1 {wd.x:.1f} {wd.y:.1f} Tm {wd.size:.1f} Tf ("
+        parts.append(head.encode("latin-1") + _escape_gbk(wd.text) + b") Tj")
+    parts.append(b"ET")
+    return b"\n".join(parts)
