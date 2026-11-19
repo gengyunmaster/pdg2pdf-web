@@ -102,7 +102,7 @@ def ocr_page(page: Page, langs: str = "chi_sim+eng") -> bytes | None:
         return None
     parts = [b"BT", b"/F1 10 Tf", b"3 Tr"]
     for wd in words:
-        head = f"1 0 0 1 {wd.x:.1f} {wd.y:.1f} Tm {wd.size:.1f} Tf ("
+        head = f"1 0 0 1 {wd.x:.1f} {wd.y:.1f} Tm /F1 {wd.size:.1f} Tf ("
         parts.append(head.encode("latin-1") + _escape_gbk(wd.text) + b") Tj")
     parts.append(b"ET")
     return b"\n".join(parts)
