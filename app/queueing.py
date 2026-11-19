@@ -47,7 +47,7 @@ class JobRunner:
         save(JOB_DIR, job)
         work = WORK_DIR / job_id
         try:
-            src = UPLOAD_DIR / job.filename
+            src = UPLOAD_DIR / job.meta.get("stored", job.filename)
             passwords = load_passwords(PASSWORD_LIST_FILE)
             extracted = extract_any(src, work / "book", passwords)
             ocr = bool(job.meta.get("ocr")) or None

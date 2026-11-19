@@ -143,6 +143,17 @@ Environment variables (set them in `docker-compose.yml` or via `-e`):
 | `PDG2PDF_DATA_DIR` | `./data` (volume) | Uploads, job state, results. |
 | `PDG2PDF_MAX_UPLOAD_MB` | `2048` | Upload size limit. |
 | `PDG2PDF_CONVERT_TIMEOUT` | `1800` | Per-book conversion timeout (seconds). |
+| `PDG2PDF_RETENTION_HOURS` | `24` | Uploaded archives, result PDFs and job records older than this are deleted automatically (`0` = keep forever). |
+
+## Storage retention
+
+Uploaded archives, converted PDFs and job metadata live in the data volume
+(`pdg2pdf-data`) and would otherwise grow without bound. A built-in sweeper
+runs every 30 minutes and deletes a job's upload, result PDF and record once
+it finished more than `PDG2PDF_RETENTION_HOURS` ago (default **24 hours**;
+set `0` to keep everything). In-flight jobs are never touched, and leftover
+orphan files are swept too. Temporary working directories are removed after
+each job regardless.
 
 ## The bundled word list
 
@@ -262,7 +273,7 @@ The `driver/` directory also contains the recon tools (`windowdump`,
 - [ ] Encrypted V2 container decryption (reverse engineering; entry points
       documented in `docs/FORMAT.md`)
 - [ ] DjVu / JPEG2000 payload support (needs sample books)
-- [ ] Job retention/cleanup policies
+- [x] Storage retention (auto-delete uploads/PDFs/records after 24 h by default)
 - [ ] First release
 
 ## License

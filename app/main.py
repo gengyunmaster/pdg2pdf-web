@@ -18,18 +18,23 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 @app.on_event("startup")
 async def startup() -> None:
+    import asyncio  # noqa: PLC0415
+
+    from .cleanup import cleaner_loop  # noqa: PLC0415
+
     ensure_dirs()
     await runner.start()
+    asyncio.create_task(cleaner_loop(), name="retention-cleaner")
 
 
 @app.post("/api/jobs")
 async def create_job(file: UploadFile, ocr: str | None = None) -> dict:
     name = _SAFE_NAME.sub("_", Path(file.filename or "upload.bin").name)
     job = Job.new(name)
-    job.meta = {"ocr": ocr == "1"}
+    job.meta = {"ocr": ocr == "1", "stored": f"{job.id}_{name}"}
     save(JOB_DIR, job)
 
-    dest = UPLOAD_DIR / job.filename
+    dest = UPLOAD_DIR / job.meta["stored"]
     written = 0
     with dest.open("wb") as f:
         while chunk := await file.read(1 << 20):
