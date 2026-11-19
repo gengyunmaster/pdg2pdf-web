@@ -83,40 +83,23 @@ def write_pdf(pages: list[Page | TextPage],
         b"/Descent -120 /CapHeight 700 /StemV 80 >> >>"
     )
     touni = add(
-        b"<< /Length 360 >>
-stream
-"
-        b"/CIDInit /ProcSet findresource begin
-"
-        b"12 dict begin
-"
-        b"begincmap
-"
+        b"<< /Length 360 >>\nstream\n"
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"12 dict begin\n"
+        b"begincmap\n"
         b"/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) "
         b"/Supplement 0 >> /CMapName /Adobe-Identity-UCS "
-        b"/CMapType 2 def
-"
-        b"1 begincodespacerange
-"
-        b"<0000> <FFFF>
-"
-        b"endcodespacerange
-"
-        b"2 beginbfrange
-"
-        b"<0000> <D7FF> <0000>
-"
-        b"<E000> <FFFD> <E000>
-"
-        b"endbfrange
-"
-        b"endcmap
-"
-        b"CMapName currentdict /CMap defineresource pop
-"
-        b"end
-end
-"
+        b"/CMapType 2 def\n"
+        b"1 begincodespacerange\n"
+        b"<0000> <FFFF>\n"
+        b"endcodespacerange\n"
+        b"2 beginbfrange\n"
+        b"<0000> <D7FF> <0000>\n"
+        b"<E000> <FFFD> <E000>\n"
+        b"endbfrange\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end\nend\n"
         b"endstream"
     )
     cjk_font_id = add(
