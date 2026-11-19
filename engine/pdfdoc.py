@@ -33,8 +33,8 @@ class OutlineEntry:
     children: list | None = None
 
 
-def _gbk_literal(text: str) -> bytes:
-    raw = text.encode("gbk", "replace")
+def _utf16_literal(text: str) -> bytes:
+    raw = text.encode("utf-16-be", "replace")
     raw = raw.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)")
     return raw
 
@@ -47,7 +47,7 @@ def _text_stream(tp: TextPage) -> bytes:
     for line in tp.lines[:60]:
         parts.append(f"1 0 0 1 72 {y:.4f} Tm".rstrip("0").rstrip(".")
                      if False else f"1 0 0 1 72 {y:.4f} Tm")
-        parts.append(b"(" + _gbk_literal(line) + b")Tj")
+        parts.append(b"(" + _utf16_literal(line) + b")Tj")
         y -= 14
     parts.append("ET")
     head = "\n".join(parts[:2]).encode("latin-1")
@@ -93,7 +93,7 @@ def write_pdf(pages: list[Page | TextPage],
     )
     cjk_font_id = add(
         b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light "
-        b"/Encoding /GBK-EUC-H /DescendantFonts ["
+        b"/Encoding /UniGB-UCS2-H /DescendantFonts ["
         + f"{cjk_desc} 0 R".encode() + b"] >>"
     )
 
@@ -262,7 +262,7 @@ def write_pdf(pages: list[Page | TextPage],
     )
     cjk_font_id = add(
         b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light "
-        b"/Encoding /GBK-EUC-H /DescendantFonts ["
+        b"/Encoding /UniGB-UCS2-H /DescendantFonts ["
         + f"{cjk_desc} 0 R".encode() + b"] >>"
     )
 

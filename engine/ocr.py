@@ -68,7 +68,8 @@ def _tsv_words(tsv: str, w_px: int, h_px: int, w_pt: float,
 
 
 def _escape_gbk(text: str) -> bytes:
-    raw = text.encode("gbk", "replace")
+    # UniGB-UCS2-H: character codes are UTF-16BE code units
+    raw = text.encode("utf-16-be", "replace")
     raw = raw.replace(b"\\", b"\\\\")
     raw = raw.replace(b"(", b"\\(")
     raw = raw.replace(b")", b"\\)")
