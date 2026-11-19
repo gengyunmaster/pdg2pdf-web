@@ -94,6 +94,42 @@ Notes:
 - Check **"OCR text layer"** in the UI when you want selectable/searchable
   text; expect the conversion to take much longer.
 
+## Offline deployment (export / import)
+
+Once the image is built, **the machine running the container no longer needs
+internet access**. End users only need network reachability to the host that
+serves the web UI (e.g. `http://<host>:8000`); the service depends on no
+other network service.
+
+Export the image on the machine that built it (the archive is ~1–2 GB):
+
+```bash
+docker compose build
+docker save pdg2pdf-web-pdg2pdf | gzip > pdg2pdf-web.tar.gz
+```
+
+Copy `pdg2pdf-web.tar.gz` to the target machine by any means (USB, scp …).
+The target machine only needs Docker installed — it does **not** need to be
+online, and it does **not** need the source tree.
+
+Import and run on the target machine (works fully offline):
+
+```bash
+gunzip -c pdg2pdf-web.tar.gz | docker load
+
+docker run -d --name pdg2pdf --restart unless-stopped   -p 8000:8000   -v pdg2pdf-data:/srv/data   -e PDG2PDF_CONVERTER=auto   pdg2pdf-web-pdg2pdf:latest
+```
+
+Open `http://<host>:8000`.
+
+Two optional mounts for the target machine:
+
+- `-v /path/to/Pdg2Pic.exe:/srv/vendor/Pdg2Pic.exe:ro` — provide the BYOB
+  binary so encrypted-V2 books can fall back to the Wine wrapper.
+- `-v /path/to/my-wordlist.txt:/srv/vendor/passwords.txt:ro` plus
+  `-e PDG2PDF_PASSWORD_LIST=/srv/vendor/passwords.txt` — use your own
+  archive password list.
+
 ## Configuration
 
 Environment variables (set them in `docker-compose.yml` or via `-e`):
